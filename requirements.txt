@@ -1,0 +1,44 @@
+# SubAgent Tracking System - Python Dependencies
+
+# Core Dependencies (MVP Phase)
+# ---------------------------------
+
+# Google Drive API for cloud backup
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+
+# Data processing and analytics
+pandas>=2.0.0
+matplotlib>=3.7.0
+
+# Schema validation
+pydantic>=2.0.0
+
+# SQLite is built-in to Python (no package needed)
+
+# Optional Dependencies (Mature Phase)
+# ---------------------------------
+
+# MongoDB for cloud analytics (uncomment when needed)
+# pymongo>=4.5.0
+
+# AWS S3 for long-term archive (uncomment when needed)
+# boto3>=1.28.0
+
+# Development Dependencies
+# ---------------------------------
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Linting and formatting
+black>=23.9.0
+flake8>=6.1.0
+mypy>=1.5.0
+
+# Documentation
+mkdocs>=1.5.0
+mkdocs-material>=9.4.0
