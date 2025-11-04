@@ -254,6 +254,224 @@ _init_lock = threading.Lock()
 
 
 # ============================================================================
+# Log Rotation and Cleanup
+# ============================================================================
+
+def list_log_files() -> List[Dict[str, Any]]:
+    """
+    List all log files in the logs directory.
+
+    Returns:
+        List of dicts containing file metadata:
+        - file_path: Path to log file
+        - session_id: Session ID extracted from filename
+        - file_size_bytes: File size in bytes
+        - creation_time: File creation timestamp
+        - is_compressed: Whether file is gzip compressed
+
+    Example:
+        >>> files = list_log_files()
+        >>> for f in files:
+        ...     print(f"{f['session_id']}: {f['file_size_bytes']} bytes")
+    """
+    config = get_config()
+    log_files = []
+
+    if not config.logs_dir.exists():
+        return log_files
+
+    # Find all .jsonl and .jsonl.gz files
+    for file_path in config.logs_dir.iterdir():
+        if not file_path.is_file():
+            continue
+
+        # Check if it's a log file
+        is_compressed = file_path.suffix == '.gz'
+        if is_compressed:
+            # .jsonl.gz file
+            if not file_path.stem.endswith('.jsonl'):
+                continue
+            session_id = file_path.stem.replace('.jsonl', '')
+        elif file_path.suffix == '.jsonl':
+            # .jsonl file
+            session_id = file_path.stem
+        else:
+            # Not a log file
+            continue
+
+        # Validate session ID format (should start with "session_" and follow pattern)
+        # Expected format: session_YYYYMMDD_HHMMSS
+        if not session_id.startswith('session_'):
+            continue
+
+        # Check that the part after "session_" looks like a date/time
+        # (at minimum, should be session_ followed by digits and underscores)
+        session_suffix = session_id.replace('session_', '', 1)
+        if not session_suffix:  # Empty after removing prefix
+            continue
+
+        # Basic validation: should contain at least one digit
+        # This filters out "session_invalid" but allows "session_20251103_120000"
+        if not any(c.isdigit() for c in session_suffix):
+            continue
+
+        # Get file stats
+        stat = file_path.stat()
+
+        log_files.append({
+            'file_path': file_path,
+            'session_id': session_id,
+            'file_size_bytes': stat.st_size,
+            'creation_time': stat.st_ctime,
+            'is_compressed': is_compressed,
+        })
+
+    # Sort by creation time (newest first)
+    log_files.sort(key=lambda f: f['creation_time'], reverse=True)
+
+    return log_files
+
+
+def get_log_file_stats() -> Dict[str, Any]:
+    """
+    Get statistics about log files.
+
+    Returns:
+        Dict containing:
+        - total_files: Total number of log files
+        - total_size_bytes: Total size of all log files
+        - oldest_session: Oldest session ID (or None)
+        - newest_session: Newest session ID (or None)
+        - current_session: Current active session ID (or None)
+
+    Example:
+        >>> stats = get_log_file_stats()
+        >>> print(f"Total: {stats['total_files']} files, {stats['total_size_bytes']} bytes")
+    """
+    log_files = list_log_files()
+
+    if not log_files:
+        return {
+            'total_files': 0,
+            'total_size_bytes': 0,
+            'oldest_session': None,
+            'newest_session': None,
+            'current_session': get_current_session_id(),
+        }
+
+    total_size = sum(f['file_size_bytes'] for f in log_files)
+
+    return {
+        'total_files': len(log_files),
+        'total_size_bytes': total_size,
+        'oldest_session': log_files[-1]['session_id'],  # Last in sorted list
+        'newest_session': log_files[0]['session_id'],   # First in sorted list
+        'current_session': get_current_session_id(),
+    }
+
+
+def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Rotate log files, keeping only the most recent sessions.
+
+    Deletes old log files based on retention policy, keeping the current
+    active session plus N-1 previous sessions.
+
+    Args:
+        retention_count: Number of sessions to keep (default: from config)
+                        Includes current session + previous sessions
+
+    Returns:
+        Dict containing:
+        - files_deleted: Number of files deleted
+        - files_kept: Number of files kept
+        - bytes_freed: Bytes freed by deletion
+        - sessions_deleted: List of deleted session IDs
+        - errors: List of error messages (if any)
+
+    Example:
+        >>> result = rotate_logs(retention_count=3)
+        >>> print(f"Deleted {result['files_deleted']} files, freed {result['bytes_freed']} bytes")
+    """
+    config = get_config()
+
+    # Get retention count from config if not provided
+    if retention_count is None:
+        retention_count = config.activity_log_retention_count
+
+    # Get all log files
+    log_files = list_log_files()
+
+    if not log_files:
+        return {
+            'files_deleted': 0,
+            'files_kept': 0,
+            'bytes_freed': 0,
+            'sessions_deleted': [],
+            'errors': [],
+        }
+
+    # Get current session (never delete this)
+    current_session = get_current_session_id()
+
+    # Separate current session from other files
+    files_to_evaluate = []
+    current_session_files = []
+
+    for file_info in log_files:
+        if file_info['session_id'] == current_session:
+            current_session_files.append(file_info)
+        else:
+            files_to_evaluate.append(file_info)
+
+    # Determine how many previous sessions to keep
+    # If there's a current session, keep N-1 previous (total = N including current)
+    # If no current session, keep N previous (total = N)
+    if current_session and len(current_session_files) > 0:
+        keep_count = max(0, retention_count - 1)
+    else:
+        keep_count = retention_count
+
+    files_to_keep = files_to_evaluate[:keep_count]
+    files_to_delete = files_to_evaluate[keep_count:]
+
+    # Delete old files
+    deleted_count = 0
+    bytes_freed = 0
+    sessions_deleted = []
+    errors = []
+
+    for file_info in files_to_delete:
+        try:
+            file_path = file_info['file_path']
+            file_size = file_info['file_size_bytes']
+            session_id = file_info['session_id']
+
+            file_path.unlink()
+
+            deleted_count += 1
+            bytes_freed += file_size
+            sessions_deleted.append(session_id)
+
+        except Exception as e:
+            error_msg = f"Failed to delete {file_path}: {str(e)}"
+            errors.append(error_msg)
+            import sys
+            print(f"Warning: {error_msg}", file=sys.stderr)
+
+    # Calculate files kept (current + kept previous sessions)
+    files_kept = len(current_session_files) + len(files_to_keep)
+
+    return {
+        'files_deleted': deleted_count,
+        'files_kept': files_kept,
+        'bytes_freed': bytes_freed,
+        'sessions_deleted': sessions_deleted,
+        'errors': errors,
+    }
+
+
+# ============================================================================
 # Lifecycle Functions
 # ============================================================================
 
@@ -295,6 +513,13 @@ def initialize(session_id: Optional[str] = None):
 
             # Register shutdown handler
             atexit.register(shutdown)
+
+            # Rotate old logs on startup (cleanup before new session)
+            try:
+                rotate_logs()
+            except Exception as e:
+                import sys
+                print(f"Warning: Log rotation on startup failed: {e}", file=sys.stderr)
 
         _initialized = True
 
