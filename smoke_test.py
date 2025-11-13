@@ -88,6 +88,7 @@ class SmokeTest:
                 question="Is system working?",
                 options=["yes", "no"],
                 selected="yes",
+                rationale="Core tests passed",
             )
             self.log(True, "Decision logging works")
             self.passed += 1
@@ -103,7 +104,8 @@ class SmokeTest:
             log_error(
                 agent="smoke-test",
                 error_type="TestError",
-                message="This is a test error (expected)",
+                error_message="This is a test error (expected)",
+                context={"test": "smoke_test"},
                 severity="low",
             )
             self.log(True, "Error logging works")
@@ -120,8 +122,9 @@ class SmokeTest:
             log_validation(
                 agent="smoke-test",
                 task="Smoke test",
+                validation_type="functional",
                 checks={"system_online": True, "database_responsive": True},
-                result="PASS",
+                result="pass",
             )
             self.log(True, "Validation logging works")
             self.passed += 1
@@ -152,13 +155,15 @@ class SmokeTest:
         """Test analytics database."""
         try:
             db = AnalyticsDB()
-            summary = db.get_session_summary()
-            if summary:
+            # Just verify database is accessible and can be queried
+            # Query all agent performance (may be empty, but query should work)
+            perf = db.query_agent_performance()
+            if perf is not None:
                 self.log(True, "Analytics database works")
                 self.passed += 1
                 return True
             else:
-                self.log(False, "Analytics database failed", "No session summary")
+                self.log(False, "Analytics database failed", "Cannot query database")
                 self.failed += 1
                 return False
         except Exception as e:
@@ -171,9 +176,9 @@ class SmokeTest:
         try:
             config = get_config()
             paths = {
-                "log_path": config.get("activity_log_path"),
-                "db_path": config.get("analytics_db_path"),
-                "state_path": config.get("snapshot_dir"),
+                "logs_dir": config.logs_dir,
+                "state_dir": config.state_dir,
+                "analytics_dir": config.analytics_dir,
             }
             if all(paths.values()):
                 self.log(True, "Configuration system works")
@@ -192,11 +197,11 @@ class SmokeTest:
         """Test that tracking directories are created."""
         try:
             required_dirs = [
-                self.config.get("logs_dir"),
-                self.config.get("state_dir"),
-                self.config.get("analytics_dir"),
+                self.config.logs_dir,
+                self.config.state_dir,
+                self.config.analytics_dir,
             ]
-            all_exist = all(os.path.isdir(d) for d in required_dirs if d)
+            all_exist = all(os.path.isdir(str(d)) for d in required_dirs if d)
             if all_exist:
                 self.log(True, "Directory structure is valid")
                 self.passed += 1
@@ -213,7 +218,7 @@ class SmokeTest:
     def test_file_permissions(self):
         """Test that files can be read and written."""
         try:
-            test_dir = self.config.get("logs_dir")
+            test_dir = str(self.config.logs_dir)
             test_file = os.path.join(test_dir, ".smoke_test")
             with open(test_file, "w") as f:
                 f.write("test")
