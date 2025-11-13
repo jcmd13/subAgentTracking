@@ -36,15 +36,19 @@ from enum import Enum
 # Base Event Model
 # ============================================================================
 
+
 class BaseEvent(BaseModel):
     """
     Base model for all tracking events.
 
     All events inherit these common fields for consistency and correlation.
     """
+
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
-    event_type: str = Field(..., description="Type of event (e.g., 'agent_invocation', 'tool_usage')")
+    event_type: str = Field(
+        ..., description="Type of event (e.g., 'agent_invocation', 'tool_usage')"
+    )
     timestamp: str = Field(..., description="ISO 8601 timestamp when event occurred")
     session_id: str = Field(..., description="Session ID (e.g., 'session_20251102_153000')")
     event_id: str = Field(..., description="Unique event ID within session (e.g., 'evt_001')")
@@ -56,11 +60,11 @@ class BaseEvent(BaseModel):
         """Validate that timestamp is in valid ISO 8601 format with time component."""
         # Check that the timestamp contains both date and time
         # ISO 8601 format requires 'T' separator or space between date and time
-        if 'T' not in v and ' ' not in v:
+        if "T" not in v and " " not in v:
             raise ValueError(f"Invalid ISO 8601 timestamp: {v} (missing time component)")
 
         try:
-            parsed = datetime.fromisoformat(v.replace('Z', '+00:00'))
+            parsed = datetime.fromisoformat(v.replace("Z", "+00:00"))
             return v
         except (ValueError, AttributeError, TypeError) as e:
             raise ValueError(f"Invalid ISO 8601 timestamp: {v}")
@@ -86,8 +90,10 @@ class BaseEvent(BaseModel):
 # Event Type 1: Agent Invocation
 # ============================================================================
 
+
 class AgentStatus(str, Enum):
     """Status of agent invocation."""
+
     STARTED = "started"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -100,20 +106,34 @@ class AgentInvocationEvent(BaseEvent):
     Used to log when agents are invoked, why they were invoked,
     and their execution results.
     """
+
     event_type: Literal["agent_invocation"] = "agent_invocation"
-    agent: str = Field(..., description="Name of the agent (e.g., 'orchestrator', 'config-architect')")
+    agent: str = Field(
+        ..., description="Name of the agent (e.g., 'orchestrator', 'config-architect')"
+    )
     invoked_by: str = Field(..., description="Who invoked the agent (e.g., 'user', 'orchestrator')")
-    reason: str = Field(..., description="Reason for invocation (e.g., 'Task 1.1: Implement event schema')")
-    status: AgentStatus = Field(AgentStatus.STARTED, description="Agent status (started/completed/failed)")
-    context: Optional[Dict[str, Any]] = Field(None, description="Additional context about the invocation")
-    result: Optional[Dict[str, Any]] = Field(None, description="Results from agent execution (if completed)")
+    reason: str = Field(
+        ..., description="Reason for invocation (e.g., 'Task 1.1: Implement event schema')"
+    )
+    status: AgentStatus = Field(
+        AgentStatus.STARTED, description="Agent status (started/completed/failed)"
+    )
+    context: Optional[Dict[str, Any]] = Field(
+        None, description="Additional context about the invocation"
+    )
+    result: Optional[Dict[str, Any]] = Field(
+        None, description="Results from agent execution (if completed)"
+    )
     duration_ms: Optional[int] = Field(None, description="Duration in milliseconds (if completed)")
-    tokens_consumed: Optional[int] = Field(None, description="Tokens consumed by agent (if completed)")
+    tokens_consumed: Optional[int] = Field(
+        None, description="Tokens consumed by agent (if completed)"
+    )
 
 
 # ============================================================================
 # Event Type 2: Tool Usage
 # ============================================================================
+
 
 class ToolUsageEvent(BaseEvent):
     """
@@ -122,11 +142,16 @@ class ToolUsageEvent(BaseEvent):
     Records when tools (Read, Write, Edit, Bash, etc.) are used,
     their parameters, duration, and success status.
     """
+
     event_type: Literal["tool_usage"] = "tool_usage"
     agent: str = Field(..., description="Agent using the tool")
     tool: str = Field(..., description="Tool name (e.g., 'Read', 'Write', 'Edit', 'Bash')")
-    operation: Optional[str] = Field(None, description="Specific operation (e.g., 'create_file', 'edit_file')")
-    parameters: Optional[Dict[str, Any]] = Field(None, description="Tool parameters (e.g., file_path, command)")
+    operation: Optional[str] = Field(
+        None, description="Specific operation (e.g., 'create_file', 'edit_file')"
+    )
+    parameters: Optional[Dict[str, Any]] = Field(
+        None, description="Tool parameters (e.g., file_path, command)"
+    )
     success: bool = Field(True, description="Whether tool execution succeeded")
     duration_ms: Optional[int] = Field(None, description="Duration in milliseconds")
     error_message: Optional[str] = Field(None, description="Error message if tool failed")
@@ -137,8 +162,10 @@ class ToolUsageEvent(BaseEvent):
 # Event Type 3: File Operation
 # ============================================================================
 
+
 class FileOperationType(str, Enum):
     """Type of file operation."""
+
     CREATE = "create"
     MODIFY = "modify"
     DELETE = "delete"
@@ -153,21 +180,29 @@ class FileOperationEvent(BaseEvent):
     Records file creates, modifications, deletes with diffs and git hashes
     for complete change tracking.
     """
+
     event_type: Literal["file_operation"] = "file_operation"
     agent: str = Field(..., description="Agent performing the operation")
     operation: FileOperationType = Field(..., description="Type of file operation")
     file_path: str = Field(..., description="Path to the file")
     lines_changed: Optional[int] = Field(None, description="Number of lines changed (for modify)")
     diff: Optional[str] = Field(None, description="Diff of changes (for modify)")
-    git_hash_before: Optional[str] = Field(None, description="Git hash before change (if in git repo)")
-    git_hash_after: Optional[str] = Field(None, description="Git hash after change (if in git repo)")
+    git_hash_before: Optional[str] = Field(
+        None, description="Git hash before change (if in git repo)"
+    )
+    git_hash_after: Optional[str] = Field(
+        None, description="Git hash after change (if in git repo)"
+    )
     file_size_bytes: Optional[int] = Field(None, description="File size in bytes")
-    language: Optional[str] = Field(None, description="Programming language (e.g., 'python', 'javascript')")
+    language: Optional[str] = Field(
+        None, description="Programming language (e.g., 'python', 'javascript')"
+    )
 
 
 # ============================================================================
 # Event Type 4: Decision
 # ============================================================================
+
 
 class DecisionEvent(BaseEvent):
     """
@@ -176,22 +211,29 @@ class DecisionEvent(BaseEvent):
     Records when agents make decisions, the options considered,
     the choice made, and the rationale.
     """
+
     event_type: Literal["decision"] = "decision"
     agent: str = Field(..., description="Agent making the decision")
     question: str = Field(..., description="Decision question being asked")
     options: List[str] = Field(..., description="Available options to choose from")
     selected: str = Field(..., description="Option that was selected")
     rationale: str = Field(..., description="Explanation for why this option was chosen")
-    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Confidence in decision (0.0-1.0)")
-    alternative_considered: Optional[str] = Field(None, description="Main alternative that was considered")
+    confidence: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Confidence in decision (0.0-1.0)"
+    )
+    alternative_considered: Optional[str] = Field(
+        None, description="Main alternative that was considered"
+    )
 
 
 # ============================================================================
 # Event Type 5: Error
 # ============================================================================
 
+
 class ErrorSeverity(str, Enum):
     """Severity level of error."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -205,21 +247,29 @@ class ErrorEvent(BaseEvent):
     Records error type, context, attempted fixes, and whether
     the fix was successful for error pattern analysis.
     """
+
     event_type: Literal["error"] = "error"
     agent: str = Field(..., description="Agent that encountered the error")
-    error_type: str = Field(..., description="Type/category of error (e.g., 'ImportError', 'ValidationError')")
+    error_type: str = Field(
+        ..., description="Type/category of error (e.g., 'ImportError', 'ValidationError')"
+    )
     error_message: str = Field(..., description="Full error message")
     severity: ErrorSeverity = Field(ErrorSeverity.MEDIUM, description="Severity of the error")
-    context: Dict[str, Any] = Field(..., description="Context where error occurred (file, line, operation)")
+    context: Dict[str, Any] = Field(
+        ..., description="Context where error occurred (file, line, operation)"
+    )
     stack_trace: Optional[str] = Field(None, description="Stack trace if available")
     attempted_fix: Optional[str] = Field(None, description="Description of fix attempt")
     fix_successful: Optional[bool] = Field(None, description="Whether the fix resolved the error")
-    recovery_time_ms: Optional[int] = Field(None, description="Time to recover from error (if successful)")
+    recovery_time_ms: Optional[int] = Field(
+        None, description="Time to recover from error (if successful)"
+    )
 
 
 # ============================================================================
 # Event Type 6: Context Snapshot
 # ============================================================================
+
 
 class ContextSnapshotEvent(BaseEvent):
     """
@@ -228,6 +278,7 @@ class ContextSnapshotEvent(BaseEvent):
     Records token consumption, files in context, and memory usage
     for optimization and tracking toward token limits.
     """
+
     event_type: Literal["context_snapshot"] = "context_snapshot"
     tokens_before: int = Field(..., description="Token count before this operation")
     tokens_after: int = Field(..., description="Token count after this operation")
@@ -244,8 +295,10 @@ class ContextSnapshotEvent(BaseEvent):
 # Event Type 7: Validation
 # ============================================================================
 
+
 class ValidationStatus(str, Enum):
     """Result of validation check."""
+
     PASS = "pass"
     FAIL = "fail"
     WARNING = "warning"
@@ -259,15 +312,22 @@ class ValidationEvent(BaseEvent):
     Records task validation, test results, performance checks,
     and acceptance criteria verification.
     """
+
     event_type: Literal["validation"] = "validation"
     agent: str = Field(..., description="Agent performing validation")
     task: str = Field(..., description="Task being validated (e.g., 'Task 1.1', 'Unit tests')")
-    validation_type: str = Field(..., description="Type of validation (e.g., 'unit_test', 'performance', 'acceptance')")
-    checks: Dict[str, ValidationStatus] = Field(..., description="Individual checks and their results")
+    validation_type: str = Field(
+        ..., description="Type of validation (e.g., 'unit_test', 'performance', 'acceptance')"
+    )
+    checks: Dict[str, ValidationStatus] = Field(
+        ..., description="Individual checks and their results"
+    )
     result: ValidationStatus = Field(..., description="Overall validation result")
     failures: Optional[List[str]] = Field(None, description="List of failed checks")
     warnings: Optional[List[str]] = Field(None, description="List of warning messages")
-    metrics: Optional[Dict[str, Any]] = Field(None, description="Performance metrics (e.g., test_coverage: 85%)")
+    metrics: Optional[Dict[str, Any]] = Field(
+        None, description="Performance metrics (e.g., test_coverage: 85%)"
+    )
 
 
 # ============================================================================

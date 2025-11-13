@@ -143,6 +143,7 @@ class Config:
     def activity_log_path(self) -> Path:
         """Get path for current session's activity log."""
         from datetime import datetime
+
         session_id = datetime.now().strftime(self.session_id_format)
         return self.logs_dir / f"{session_id}.jsonl"
 
@@ -267,7 +268,6 @@ class Config:
             "analytics_dir": str(self.analytics_dir),
             "credentials_dir": str(self.credentials_dir),
             "handoffs_dir": str(self.handoffs_dir),
-
             # Settings
             "activity_log_enabled": self.activity_log_enabled,
             "activity_log_compression": self.activity_log_compression,
@@ -285,22 +285,18 @@ class Config:
             "analytics_enabled": self.analytics_enabled,
             "analytics_db_name": self.analytics_db_name,
             "analytics_batch_size": self.analytics_batch_size,
-
             # Performance budgets
             "event_logging_max_latency_ms": self.event_logging_max_latency_ms,
             "snapshot_creation_max_latency_ms": self.snapshot_creation_max_latency_ms,
             "query_max_latency_ms": self.query_max_latency_ms,
             "backup_max_duration_minutes": self.backup_max_duration_minutes,
-
             # Session settings
             "token_limit_warning_threshold": self.token_limit_warning_threshold,
             "session_id_format": self.session_id_format,
-
             # Storage limits
             "max_local_storage_mb": self.max_local_storage_mb,
             "max_log_file_size_mb": self.max_log_file_size_mb,
             "max_snapshot_size_mb": self.max_snapshot_size_mb,
-
             # Validation
             "validate_event_schemas": self.validate_event_schemas,
             "strict_mode": self.strict_mode,
@@ -337,6 +333,7 @@ def get_config(reload: bool = False) -> Config:
                 raise ValueError(f"Invalid configuration: {', '.join(errors)}")
             else:
                 import warnings
+
                 warnings.warn(f"Configuration validation warnings: {', '.join(errors)}")
 
     return _config

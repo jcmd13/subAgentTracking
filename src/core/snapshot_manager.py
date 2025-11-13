@@ -50,6 +50,7 @@ _last_token_count: int = 0
 # Snapshot Trigger Detection
 # ============================================================================
 
+
 def should_take_snapshot(
     agent_count: Optional[int] = None,
     token_count: Optional[int] = None,
@@ -91,6 +92,7 @@ def should_take_snapshot(
 # Git Integration
 # ============================================================================
 
+
 def get_git_state() -> Dict[str, Any]:
     """
     Get current git repository state.
@@ -108,7 +110,7 @@ def get_git_state() -> Dict[str, Any]:
             cwd=project_root,
             capture_output=True,
             check=True,
-            timeout=2
+            timeout=2,
         )
 
         # Get current branch
@@ -117,9 +119,11 @@ def get_git_state() -> Dict[str, Any]:
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
         )
-        current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
+        current_branch = (
+            branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
+        )
 
         # Get latest commit hash
         commit_result = subprocess.run(
@@ -127,7 +131,7 @@ def get_git_state() -> Dict[str, Any]:
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
         )
         latest_commit = commit_result.stdout.strip() if commit_result.returncode == 0 else "unknown"
 
@@ -137,16 +141,18 @@ def get_git_state() -> Dict[str, Any]:
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
         )
-        uncommitted_changes = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
+        uncommitted_changes = (
+            bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
+        )
 
         # Get modified files
         modified_files = []
         if uncommitted_changes:
             modified_files = [
                 line.strip().split(maxsplit=1)[1]
-                for line in status_result.stdout.strip().split('\n')
+                for line in status_result.stdout.strip().split("\n")
                 if line.strip()
             ]
 
@@ -169,6 +175,7 @@ def get_git_state() -> Dict[str, Any]:
 # Snapshot Creation
 # ============================================================================
 
+
 def take_snapshot(
     trigger: str = "manual",
     agent_count: Optional[int] = None,
@@ -176,7 +183,7 @@ def take_snapshot(
     tokens_remaining: Optional[int] = None,
     files_in_context: Optional[List[str]] = None,
     agent_context: Optional[Dict[str, Any]] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Create a snapshot of current session state.
@@ -226,7 +233,7 @@ def take_snapshot(
         _last_token_count = token_count
 
     # Get current timestamp
-    timestamp = datetime.utcnow().isoformat() + 'Z'
+    timestamp = datetime.utcnow().isoformat() + "Z"
 
     # Get total event count
     total_events = activity_logger.get_event_count()
@@ -285,14 +292,15 @@ def take_snapshot(
     try:
         if cfg.snapshot_compression:
             # Write compressed JSON
-            with gzip.open(str(snapshot_path) + ".gz", 'wt', encoding='utf-8') as f:
+            with gzip.open(str(snapshot_path) + ".gz", "wt", encoding="utf-8") as f:
                 json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
         else:
             # Write uncompressed JSON
-            with open(snapshot_path, 'w', encoding='utf-8') as f:
+            with open(snapshot_path, "w", encoding="utf-8") as f:
                 json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         import sys
+
         print(f"Error writing snapshot {snapshot_id}: {e}", file=sys.stderr)
         return snapshot_id  # Return ID even if write failed
 
@@ -307,16 +315,17 @@ def take_snapshot(
             tokens_consumed=token_count or 0,
             tokens_remaining=tokens_remaining or 0,
             files_in_context=files_in_context or [],
-            agent=agent_context.get('current_agent') if agent_context else None
+            agent=agent_context.get("current_agent") if agent_context else None,
         )
 
     # Check performance budget
     if duration_ms > cfg.snapshot_creation_max_latency_ms:
         import sys
+
         print(
             f"Warning: Snapshot creation took {duration_ms}ms "
             f"(budget: {cfg.snapshot_creation_max_latency_ms}ms)",
-            file=sys.stderr
+            file=sys.stderr,
         )
 
     return snapshot_id
@@ -325,6 +334,7 @@ def take_snapshot(
 # ============================================================================
 # Snapshot Restoration
 # ============================================================================
+
 
 def restore_snapshot(snapshot_id: str) -> Dict[str, Any]:
     """
@@ -362,15 +372,14 @@ def restore_snapshot(snapshot_id: str) -> Dict[str, Any]:
     # Try to load compressed version first
     compressed_path = Path(str(snapshot_path) + ".gz")
     if compressed_path.exists():
-        with gzip.open(compressed_path, 'rt', encoding='utf-8') as f:
+        with gzip.open(compressed_path, "rt", encoding="utf-8") as f:
             snapshot_data = json.load(f)
     elif snapshot_path.exists():
-        with open(snapshot_path, 'r', encoding='utf-8') as f:
+        with open(snapshot_path, "r", encoding="utf-8") as f:
             snapshot_data = json.load(f)
     else:
         raise FileNotFoundError(
-            f"Snapshot not found: {snapshot_id} "
-            f"(tried {snapshot_path} and {compressed_path})"
+            f"Snapshot not found: {snapshot_id} " f"(tried {snapshot_path} and {compressed_path})"
         )
 
     # Calculate duration
@@ -379,10 +388,8 @@ def restore_snapshot(snapshot_id: str) -> Dict[str, Any]:
     # Check performance target (50ms for load)
     if duration_ms > 50:
         import sys
-        print(
-            f"Warning: Snapshot load took {duration_ms}ms (target: <50ms)",
-            file=sys.stderr
-        )
+
+        print(f"Warning: Snapshot load took {duration_ms}ms (target: <50ms)", file=sys.stderr)
 
     return snapshot_data
 
@@ -390,6 +397,7 @@ def restore_snapshot(snapshot_id: str) -> Dict[str, Any]:
 # ============================================================================
 # Snapshot Listing and Cleanup
 # ============================================================================
+
 
 def list_snapshots(session_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
@@ -414,28 +422,31 @@ def list_snapshots(session_id: Optional[str] = None) -> List[Dict[str, Any]]:
     for snapshot_file in state_dir.glob(pattern):
         try:
             # Load just the metadata
-            if snapshot_file.suffix == '.gz':
-                with gzip.open(snapshot_file, 'rt', encoding='utf-8') as f:
+            if snapshot_file.suffix == ".gz":
+                with gzip.open(snapshot_file, "rt", encoding="utf-8") as f:
                     data = json.load(f)
             else:
-                with open(snapshot_file, 'r', encoding='utf-8') as f:
+                with open(snapshot_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-            snapshots.append({
-                "snapshot_id": data['metadata']['snapshot_id'],
-                "timestamp": data['metadata']['timestamp'],
-                "trigger": data['metadata']['trigger'],
-                "file_path": str(snapshot_file),
-                "file_size_bytes": snapshot_file.stat().st_size,
-            })
+            snapshots.append(
+                {
+                    "snapshot_id": data["metadata"]["snapshot_id"],
+                    "timestamp": data["metadata"]["timestamp"],
+                    "trigger": data["metadata"]["trigger"],
+                    "file_path": str(snapshot_file),
+                    "file_size_bytes": snapshot_file.stat().st_size,
+                }
+            )
         except (json.JSONDecodeError, KeyError) as e:
             # Skip corrupted snapshots
             import sys
+
             print(f"Warning: Skipping corrupted snapshot {snapshot_file}: {e}", file=sys.stderr)
             continue
 
     # Sort by snapshot number
-    snapshots.sort(key=lambda s: s['snapshot_id'])
+    snapshots.sort(key=lambda s: s["snapshot_id"])
 
     return snapshots
 
@@ -471,6 +482,7 @@ def cleanup_old_snapshots(retention_days: Optional[int] = None) -> int:
                 deleted_count += 1
         except OSError as e:
             import sys
+
             print(f"Warning: Failed to delete {snapshot_file}: {e}", file=sys.stderr)
 
     return deleted_count
@@ -479,6 +491,7 @@ def cleanup_old_snapshots(retention_days: Optional[int] = None) -> int:
 # ============================================================================
 # Handoff Summary Generation
 # ============================================================================
+
 
 def create_handoff_summary(
     session_id: Optional[str] = None,
@@ -510,14 +523,14 @@ def create_handoff_summary(
     if session_id is None:
         session_id = activity_logger.get_current_session_id()
 
-    timestamp = datetime.utcnow().isoformat() + 'Z'
+    timestamp = datetime.utcnow().isoformat() + "Z"
 
     # Get latest snapshot
     latest_snapshot = None
     if include_latest_snapshot:
         snapshots = list_snapshots(session_id)
         if snapshots:
-            latest_snapshot_id = snapshots[-1]['snapshot_id']
+            latest_snapshot_id = snapshots[-1]["snapshot_id"]
             try:
                 latest_snapshot = restore_snapshot(latest_snapshot_id)
             except (FileNotFoundError, json.JSONDecodeError):
@@ -536,105 +549,150 @@ def create_handoff_summary(
     ]
 
     if latest_snapshot:
-        session_state = latest_snapshot.get('session_state', {})
-        token_usage = session_state.get('token_usage', {})
-        git_state = latest_snapshot.get('git_state', {})
+        session_state = latest_snapshot.get("session_state", {})
+        token_usage = session_state.get("token_usage", {})
+        git_state = latest_snapshot.get("git_state", {})
 
-        lines.extend([
-            f"- **Total Events:** {session_state.get('total_events', 0)}",
-            f"- **Agent Invocations:** {session_state.get('agent_invocation_count', 0)}",
-            f"- **Tokens Consumed:** {token_usage.get('tokens_consumed', 0):,}",
-            f"- **Tokens Remaining:** {token_usage.get('tokens_remaining', 0):,}",
-            f"- **Session Duration:** {session_state.get('elapsed_time_seconds', 0)} seconds",
-            f"",
-        ])
+        lines.extend(
+            [
+                f"- **Total Events:** {session_state.get('total_events', 0)}",
+                f"- **Agent Invocations:** {session_state.get('agent_invocation_count', 0)}",
+                f"- **Tokens Consumed:** {token_usage.get('tokens_consumed', 0):,}",
+                f"- **Tokens Remaining:** {token_usage.get('tokens_remaining', 0):,}",
+                f"- **Session Duration:** {session_state.get('elapsed_time_seconds', 0)} seconds",
+                f"",
+            ]
+        )
 
         # Git state
-        if git_state.get('is_git_repo'):
-            lines.extend([
-                f"## Git State",
-                f"",
-                f"- **Branch:** `{git_state.get('current_branch', 'unknown')}`",
-                f"- **Commit:** `{git_state.get('latest_commit', 'unknown')}`",
-                f"- **Uncommitted Changes:** {git_state.get('uncommitted_changes', False)}",
-                f"",
-            ])
-
-            if git_state.get('modified_files'):
-                lines.extend([
-                    f"### Modified Files",
+        if git_state.get("is_git_repo"):
+            lines.extend(
+                [
+                    f"## Git State",
                     f"",
-                ])
-                for file in git_state['modified_files']:
+                    f"- **Branch:** `{git_state.get('current_branch', 'unknown')}`",
+                    f"- **Commit:** `{git_state.get('latest_commit', 'unknown')}`",
+                    f"- **Uncommitted Changes:** {git_state.get('uncommitted_changes', False)}",
+                    f"",
+                ]
+            )
+
+            if git_state.get("modified_files"):
+                lines.extend(
+                    [
+                        f"### Modified Files",
+                        f"",
+                    ]
+                )
+                for file in git_state["modified_files"]:
                     lines.append(f"- `{file}`")
                 lines.append("")
 
         # Files in context
-        file_ops = latest_snapshot.get('file_operations', {})
-        if file_ops.get('files_in_context'):
-            lines.extend([
-                f"## Files in Context",
-                f"",
-            ])
-            for file in file_ops['files_in_context']:
+        file_ops = latest_snapshot.get("file_operations", {})
+        if file_ops.get("files_in_context"):
+            lines.extend(
+                [
+                    f"## Files in Context",
+                    f"",
+                ]
+            )
+            for file in file_ops["files_in_context"]:
                 lines.append(f"- `{file}`")
             lines.append("")
 
         # Agent context
-        agent_ctx = latest_snapshot.get('agent_context', {})
+        agent_ctx = latest_snapshot.get("agent_context", {})
         if agent_ctx:
-            lines.extend([
-                f"## Agent Context",
-                f"",
-                f"```json",
-                json.dumps(agent_ctx, indent=2),
-                f"```",
-                f"",
-            ])
+            lines.extend(
+                [
+                    f"## Agent Context",
+                    f"",
+                    f"```json",
+                    json.dumps(agent_ctx, indent=2),
+                    f"```",
+                    f"",
+                ]
+            )
     else:
-        lines.extend([
-            f"*No snapshot available for this session*",
-            f"",
-        ])
+        lines.extend(
+            [
+                f"*No snapshot available for this session*",
+                f"",
+            ]
+        )
 
     # Snapshots section
     snapshots = list_snapshots(session_id)
     if snapshots:
-        lines.extend([
-            f"## Available Snapshots",
-            f"",
-        ])
+        lines.extend(
+            [
+                f"## Available Snapshots",
+                f"",
+            ]
+        )
         for snap in snapshots:
             lines.append(
-                f"- **{snap['snapshot_id']}** "
-                f"({snap['trigger']}) - {snap['timestamp']}"
+                f"- **{snap['snapshot_id']}** " f"({snap['trigger']}) - {snap['timestamp']}"
             )
         lines.append("")
 
     # Recovery instructions
-    lines.extend([
-        f"## Recovery Instructions",
-        f"",
-        f"To resume this session in a new context:",
-        f"",
-        f"```python",
-        f"from src.core.snapshot_manager import restore_snapshot",
-        f"",
-        f"# Restore latest state",
-        f"state = restore_snapshot('{latest_snapshot['metadata']['snapshot_id'] if latest_snapshot else 'snap_001'}')",
-        f"",
-        f"# Review session state",
-        f"print(state['session_state'])",
-        f"```",
-        f"",
-        f"Or simply say: **\"Resume from session `{session_id}`\"**",
-        f"",
-    ])
+    lines.extend(
+        [
+            f"## Recovery Instructions",
+            f"",
+            f"To resume this session in a new context:",
+            f"",
+            f"```python",
+            f"from src.core.snapshot_manager import restore_snapshot",
+            f"",
+            f"# Restore latest state",
+            f"state = restore_snapshot('{latest_snapshot['metadata']['snapshot_id'] if latest_snapshot else 'snap_001'}')",
+            f"",
+            f"# Review session state",
+            f"print(state['session_state'])",
+            f"```",
+            f"",
+            f'Or simply say: **"Resume from session `{session_id}`"**',
+            f"",
+        ]
+    )
+
+    # Trigger automatic backup on handoff (if enabled)
+    try:
+        from src.core.backup_integration import backup_on_handoff
+
+        backup_result = backup_on_handoff(session_id=session_id, reason=reason)
+
+        # Add backup status to handoff summary if attempted
+        if backup_result.get("attempted"):
+            lines.extend(
+                [
+                    f"",
+                    f"## Backup Status",
+                    f"",
+                ]
+            )
+            if backup_result.get("success"):
+                lines.append(
+                    f"✅ **Session backed up to Google Drive** (ID: `{backup_result.get('backup_id')}`)"
+                )
+            else:
+                error = backup_result.get("error", "unknown")
+                lines.append(f"⚠️ **Backup failed:** {error}")
+            lines.append(f"")
+    except ImportError:
+        # Backup integration not available
+        pass
+    except Exception:
+        # Backup failed, but continue with handoff
+        pass
 
     # Write handoff file
     handoff_path = cfg.get_handoff_path(session_id)
-    with open(handoff_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(lines))
+    with open(handoff_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
     return str(handoff_path)
 
@@ -642,6 +700,7 @@ def create_handoff_summary(
 # ============================================================================
 # Module Initialization
 # ============================================================================
+
 
 def reset_snapshot_counter():
     """Reset snapshot counter (primarily for testing)."""

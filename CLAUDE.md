@@ -414,12 +414,189 @@ pip install subagent-tracking
 
 **SQLite database locked**: Close any DB browsers or wait a few seconds
 
+## Zen MCP Integration
+
+**Status**: Configured and Active (v1.1 - Ollama Integrated)
+
+This project uses [Zen MCP Server](https://github.com/BeehiveInnovations/zen-mcp-server) with a three-tier model strategy to offload high-token analysis tasks while maintaining Claude Code quality for implementation.
+
+### Core Strategy: Three-Tier Model Selection
+
+**TIER 1: Ollama (Try First)** ⭐
+- `gpt-oss:120b-cloud` - 120B params, cloud-hosted, FREE, PRIMARY model
+- `deepseek-v3.1:671b-cloud` - 671B params, complex reasoning, FREE
+- Local models (mistral, phi3.5, etc.) - Quick drafts, offline work
+- **Quality Gate**: Score ≥ 18/25 to use, fallback to Tier 2 if lower
+
+**TIER 2: Gemini (Refinement & High-Stakes)** ✅
+- `gemini-2.5-pro` - 1M context, proven reliable, FREE
+- `gemini-2.5-flash` - Ultra-fast for quick checks, FREE
+
+**TIER 3: Paid Models (Avoid)** ❌
+- `gpt-5-pro`, `o3-pro`, etc. - COST $$$
+- **Only use if**: Both Tier 1 and 2 demonstrably fail quality checks
+
+**Token Distribution** (when Ollama quality is good):
+- **60-70% Ollama** (free): Experimental validation, analysis
+- **20-30% Gemini** (free): Refinement, high-stakes validation
+- **10% Claude** (focused): Final code generation, implementation
+
+**Cost Optimization**:
+- Try Ollama first for non-critical tasks
+- Validate quality rigorously (5-point checklist)
+- Fallback to Gemini if needed
+- **Avoid**: Paid models entirely
+
+### Zen MCP Documentation
+
+**Quick Start**:
+- **`.claude/ZEN_MCP_QUICK_REFERENCE.md`** - 2-minute lookup guide (updated for Ollama)
+- **`.claude/ZEN_MCP_DECISION_TREE.md`** - Visual decision trees (three-tier strategy)
+- **`.claude/ZEN_MCP_RULES.md`** - Comprehensive usage rules (Ollama-first workflows)
+- **`.claude/OLLAMA_INTEGRATION_RULES.md`** - Detailed Ollama quality validation guide
+
+### Common Zen Workflows (Ollama-First)
+
+**Code Analysis** (saves ~95% tokens):
+```
+1. mcp__zen__analyze with gpt-oss:120b-cloud
+2. Claude validates quality (score: 21/25 ✅)
+3. Claude implements based on Ollama findings
+
+Alternative (if quality score < 18/25):
+1. mcp__zen__analyze with gpt-oss:120b-cloud
+2. Claude validates quality (score: 16/25 ⚠️)
+3. mcp__zen__analyze with gemini-2.5-pro (refine)
+4. Claude implements based on refined findings
+```
+
+**Debugging** (saves ~90% tokens):
+```
+1. mcp__zen__debug with gpt-oss:120b-cloud
+2. Claude validates quality
+3. If score ≥ 18/25: Claude implements fix
+   If score < 18/25: Refine with gemini-2.5-pro, then fix
+```
+
+**Feature Implementation** (saves ~85% tokens + quality validation):
+```
+1. mcp__zen__planner with gpt-oss:120b-cloud
+2. Claude validates quality (if ≥ 18/25, proceed; else refine with Gemini)
+3. mcp__zen__chat with gpt-oss:120b-cloud (discuss approach)
+4. Claude implements code
+5. mcp__zen__codereview with gpt-oss:120b-cloud (validate quality)
+6. Claude fixes issues
+7. mcp__zen__precommit with gemini-2.5-pro (high-stakes final check)
+8. Claude commits
+```
+
+**High-Stakes Tasks** (skip Ollama):
+```
+Security audit, production deployment, critical bug fix:
+→ Skip Ollama (unproven for critical tasks)
+→ Use gemini-2.5-pro directly
+→ Claude implements with proven-quality findings
+```
+
+### Integration with Activity Logger
+
+Log Ollama usage with quality tracking:
+```python
+from src.core.activity_logger import log_tool_usage, log_decision
+
+# Log decision to use Ollama
+log_decision(
+    question="Which model for code analysis?",
+    options=["Ollama (gpt-oss:120b-cloud)", "Gemini", "Claude direct"],
+    selected="Ollama (gpt-oss:120b-cloud)",
+    rationale="150k+ tokens, Ollama is free + quality validation"
+)
+
+# Log Ollama usage with quality score
+log_tool_usage(
+    agent="ollama",
+    tool="gpt-oss:120b-cloud",
+    details={
+        "task_type": "code_analysis",
+        "quality_score": "21/25",
+        "breakdown": {
+            "correctness": 5,
+            "completeness": 4,
+            "specificity": 4,
+            "context_awareness": 4,
+            "actionability": 4
+        },
+        "outcome": "used_as_is",
+        "token_estimate": "~150k tokens"
+    }
+)
+```
+
+### Available Models (Three-Tier Strategy)
+
+**TIER 1 - FREE (Try First)** ⭐:
+- `gpt-oss:120b-cloud` - 120B params, cloud-hosted, PRIMARY Ollama model
+- `deepseek-v3.1:671b-cloud` - 671B params, complex reasoning
+- `mistral:latest`, `phi3.5:3.8b` - Local models for quick drafts
+
+**TIER 2 - FREE (Refinement)** ✅:
+- `gemini-2.5-pro` - 1M context, proven reliable
+- `gemini-2.5-flash` - Ultra-fast for quick checks
+
+**TIER 3 - PAID (Avoid)** ❌:
+- All OpenAI models (`gpt-5-pro`, `gpt-5`, `o3-pro`, etc.)
+- OpenRouter models
+- **Exception**: Only if both Ollama AND Gemini fail quality checks
+
+### Quality Validation (5-Point Checklist)
+
+**For Ollama Output** - Score 1-5 on each:
+1. **Correctness**: Factually accurate?
+2. **Completeness**: All aspects addressed?
+3. **Specificity**: Concrete vs vague?
+4. **Context Awareness**: Understands project context?
+5. **Actionability**: Can Claude implement directly?
+
+**Scoring**:
+- **20-25/25**: ✅ Use as-is
+- **18-19/25**: ✅ Use with minor validation
+- **15-17/25**: ⚠️ Refine with Gemini
+- **< 15/25**: ❌ Discard, use Gemini
+
+**For Gemini Output** - Proven reliable:
+- Quick validation for critical issues only
+- Trust output unless obviously flawed
+
+### Token Savings Examples
+
+| Task | Claude Only | With Ollama (validated) | With Gemini (fallback) | Savings |
+|------|-------------|-------------------------|------------------------|---------|
+| Analyze architecture | ~150k tokens | ~5k tokens | ~8k tokens | 95-97% |
+| Debug complex bug | ~100k tokens | ~6k tokens | ~10k tokens | 90-94% |
+| Pre-commit review | ~50k tokens | ~3k tokens | ~5k tokens | 90-94% |
+| Plan feature | ~80k tokens | ~4k tokens | ~6k tokens | 93-95% |
+
+**Expected Savings**:
+- **With Ollama** (when quality ≥ 18/25): 95-97% of analysis tokens moved to validation workflow
+- **With Gemini** (fallback): 85-95% of analysis/review tokens
+- **Bonus**: Quality validation data and multi-model checking at zero added cost
+
 ## Related Documentation
 
 For comprehensive details, see:
+
+**Core Tracking System**:
 - **`.claude/AGENT_TRACKING_SYSTEM.md`** (28k) - Complete technical specification
 - **`.claude/STORAGE_ARCHITECTURE.md`** (26k) - Storage strategy & capacity planning
 - **`.claude/TRACKING_QUICK_REFERENCE.md`** - Quick lookup guide for common operations
+
+**Zen MCP & Model Strategy**:
+- **`.claude/ZEN_MCP_RULES.md`** - Comprehensive Zen MCP usage rules (three-tier strategy)
+- **`.claude/ZEN_MCP_QUICK_REFERENCE.md`** - Quick Zen MCP reference (Ollama-first)
+- **`.claude/ZEN_MCP_DECISION_TREE.md`** - Visual decision trees (updated for Ollama)
+- **`.claude/OLLAMA_INTEGRATION_RULES.md`** - Detailed Ollama quality validation guide
+
+**Project Documentation**:
 - **`GETTING_STARTED.md`** - Detailed setup instructions with examples
 - **`README.md`** - High-level project overview
 - **`PROJECT_MANIFEST.md`** - Comprehensive project manifest

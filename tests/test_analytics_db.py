@@ -27,6 +27,7 @@ from src.core import config as config_module
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def temp_analytics_dir():
     """Create temporary directory for analytics database."""
@@ -37,6 +38,7 @@ def temp_analytics_dir():
 @pytest.fixture
 def mock_config(temp_analytics_dir, monkeypatch):
     """Mock configuration with temp directories."""
+
     class MockConfig:
         def __init__(self):
             self.analytics_dir = temp_analytics_dir
@@ -44,8 +46,8 @@ def mock_config(temp_analytics_dir, monkeypatch):
             self.analytics_enabled = True
 
     test_config = MockConfig()
-    monkeypatch.setattr(config_module, 'get_config', lambda: test_config)
-    monkeypatch.setattr('src.core.analytics_db.get_config', lambda: test_config)
+    monkeypatch.setattr(config_module, "get_config", lambda: test_config)
+    monkeypatch.setattr("src.core.analytics_db.get_config", lambda: test_config)
 
     # Reset global instance
     analytics_db._db_instance = None
@@ -56,6 +58,7 @@ def mock_config(temp_analytics_dir, monkeypatch):
 # ============================================================================
 # Test Database Initialization
 # ============================================================================
+
 
 class TestDatabaseInitialization:
     """Tests for database initialization and schema creation."""
@@ -74,14 +77,14 @@ class TestDatabaseInitialization:
         db.initialize()
 
         expected_tables = [
-            'schema_version',
-            'sessions',
-            'agent_performance',
-            'tool_usage',
-            'error_patterns',
-            'file_operations',
-            'decisions',
-            'validations'
+            "schema_version",
+            "sessions",
+            "agent_performance",
+            "tool_usage",
+            "error_patterns",
+            "file_operations",
+            "decisions",
+            "validations",
         ]
 
         with db.get_connection() as conn:
@@ -103,9 +106,9 @@ class TestDatabaseInitialization:
             indexes = [row[0] for row in cursor.fetchall()]
 
             # Check for key indexes
-            assert any('idx_agent_perf' in idx for idx in indexes)
-            assert any('idx_tool_usage' in idx for idx in indexes)
-            assert any('idx_errors' in idx for idx in indexes)
+            assert any("idx_agent_perf" in idx for idx in indexes)
+            assert any("idx_tool_usage" in idx for idx in indexes)
+            assert any("idx_errors" in idx for idx in indexes)
 
     def test_init_is_idempotent(self, mock_config):
         """Test that initialization can be called multiple times safely."""
@@ -136,6 +139,7 @@ class TestDatabaseInitialization:
 # Test Insert Functions
 # ============================================================================
 
+
 class TestInsertFunctions:
     """Tests for event insertion functions."""
 
@@ -153,7 +157,7 @@ class TestInsertFunctions:
             duration_ms=1500,
             tokens_consumed=5000,
             status="completed",
-            task_type="Phase 1 Planning"
+            task_type="Phase 1 Planning",
         )
 
         assert result is True
@@ -165,9 +169,9 @@ class TestInsertFunctions:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['agent_name'] == "orchestrator"
-            assert row['duration_ms'] == 1500
-            assert row['status'] == "completed"
+            assert row["agent_name"] == "orchestrator"
+            assert row["duration_ms"] == 1500
+            assert row["status"] == "completed"
 
     def test_insert_tool_usage(self, mock_config):
         """Test inserting tool usage record."""
@@ -182,7 +186,7 @@ class TestInsertFunctions:
             timestamp="2025-11-03T12:01:00Z",
             operation="create_file",
             duration_ms=45,
-            success=True
+            success=True,
         )
 
         assert result is True
@@ -194,8 +198,8 @@ class TestInsertFunctions:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['tool_name'] == "Write"
-            assert row['success'] == 1  # SQLite stores boolean as int
+            assert row["tool_name"] == "Write"
+            assert row["success"] == 1  # SQLite stores boolean as int
 
     def test_insert_error_pattern(self, mock_config):
         """Test inserting error pattern record."""
@@ -213,7 +217,7 @@ class TestInsertFunctions:
             file_path="src/test.py",
             fix_attempted="Added import statement",
             fix_successful=True,
-            resolution_time_ms=500
+            resolution_time_ms=500,
         )
 
         assert result is True
@@ -225,8 +229,8 @@ class TestInsertFunctions:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['error_type'] == "ImportError"
-            assert row['fix_successful'] == 1
+            assert row["error_type"] == "ImportError"
+            assert row["fix_successful"] == 1
 
     def test_insert_file_operation(self, mock_config):
         """Test inserting file operation record."""
@@ -241,7 +245,7 @@ class TestInsertFunctions:
             file_path="src/core/config.py",
             timestamp="2025-11-03T12:03:00Z",
             lines_changed=25,
-            language="python"
+            language="python",
         )
 
         assert result is True
@@ -253,8 +257,8 @@ class TestInsertFunctions:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['operation'] == "modify"
-            assert row['lines_changed'] == 25
+            assert row["operation"] == "modify"
+            assert row["lines_changed"] == 25
 
     def test_insert_decision(self, mock_config):
         """Test inserting decision record."""
@@ -269,7 +273,7 @@ class TestInsertFunctions:
             selected="config-architect",
             timestamp="2025-11-03T12:04:00Z",
             rationale="Infrastructure work matches expertise",
-            confidence=0.95
+            confidence=0.95,
         )
 
         assert result is True
@@ -281,8 +285,8 @@ class TestInsertFunctions:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['selected'] == "config-architect"
-            assert row['confidence'] == 0.95
+            assert row["selected"] == "config-architect"
+            assert row["confidence"] == 0.95
 
     def test_insert_validation(self, mock_config):
         """Test inserting validation record."""
@@ -298,7 +302,7 @@ class TestInsertFunctions:
             result="pass",
             timestamp="2025-11-03T12:05:00Z",
             checks={"coverage": "pass", "performance": "pass"},
-            failures=[]
+            failures=[],
         )
 
         assert result is True
@@ -310,13 +314,14 @@ class TestInsertFunctions:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['result'] == "pass"
-            assert '"coverage"' in row['checks_json']
+            assert row["result"] == "pass"
+            assert '"coverage"' in row["checks_json"]
 
 
 # ============================================================================
 # Test Session Management
 # ============================================================================
+
 
 class TestSessionManagement:
     """Tests for session management functions."""
@@ -330,7 +335,7 @@ class TestSessionManagement:
             session_id="session_20251103_120000",
             started_at="2025-11-03T12:00:00Z",
             phase="Phase 1",
-            notes="Initial implementation"
+            notes="Initial implementation",
         )
 
         assert result is True
@@ -342,8 +347,8 @@ class TestSessionManagement:
             row = cursor.fetchone()
 
             assert row is not None
-            assert row['session_id'] == "session_20251103_120000"
-            assert row['phase'] == "Phase 1"
+            assert row["session_id"] == "session_20251103_120000"
+            assert row["phase"] == "Phase 1"
 
     def test_update_session_end(self, mock_config):
         """Test updating session end time."""
@@ -351,16 +356,11 @@ class TestSessionManagement:
         db.initialize()
 
         # Insert session first
-        db.insert_session(
-            session_id="session_20251103_120000",
-            started_at="2025-11-03T12:00:00Z"
-        )
+        db.insert_session(session_id="session_20251103_120000", started_at="2025-11-03T12:00:00Z")
 
         # Update end time
         result = db.update_session_end(
-            session_id="session_20251103_120000",
-            ended_at="2025-11-03T12:30:00Z",
-            success=True
+            session_id="session_20251103_120000", ended_at="2025-11-03T12:30:00Z", success=True
         )
 
         assert result is True
@@ -368,11 +368,13 @@ class TestSessionManagement:
         # Verify data
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM sessions WHERE session_id = ?", ("session_20251103_120000",))
+            cursor.execute(
+                "SELECT * FROM sessions WHERE session_id = ?", ("session_20251103_120000",)
+            )
             row = cursor.fetchone()
 
-            assert row['ended_at'] == "2025-11-03T12:30:00Z"
-            assert row['success'] == 1
+            assert row["ended_at"] == "2025-11-03T12:30:00Z"
+            assert row["success"] == 1
 
     def test_get_session_summary(self, mock_config):
         """Test getting session summary."""
@@ -386,26 +388,21 @@ class TestSessionManagement:
 
         # Insert some events
         db.insert_agent_performance(
-            session_id, "evt_001", "orchestrator", "user",
-            "2025-11-03T12:00:00Z"
+            session_id, "evt_001", "orchestrator", "user", "2025-11-03T12:00:00Z"
         )
-        db.insert_tool_usage(
-            session_id, "evt_002", "orchestrator", "Read",
-            "2025-11-03T12:01:00Z"
-        )
+        db.insert_tool_usage(session_id, "evt_002", "orchestrator", "Read", "2025-11-03T12:01:00Z")
         db.insert_error_pattern(
-            session_id, "evt_003", "orchestrator", "TestError",
-            "Test error", "2025-11-03T12:02:00Z"
+            session_id, "evt_003", "orchestrator", "TestError", "Test error", "2025-11-03T12:02:00Z"
         )
 
         # Get summary
         summary = db.get_session_summary(session_id)
 
         assert summary is not None
-        assert summary['session_id'] == session_id
-        assert summary['agent_invocations'] == 1
-        assert summary['tool_usages'] == 1
-        assert summary['errors'] == 1
+        assert summary["session_id"] == session_id
+        assert summary["agent_invocations"] == 1
+        assert summary["tool_usages"] == 1
+        assert summary["errors"] == 1
 
     def test_get_session_summary_nonexistent(self, mock_config):
         """Test getting summary for nonexistent session."""
@@ -420,6 +417,7 @@ class TestSessionManagement:
 # ============================================================================
 # Test Query Functions
 # ============================================================================
+
 
 class TestQueryFunctions:
     """Tests for analytics query functions."""
@@ -437,7 +435,7 @@ class TestQueryFunctions:
                 agent_name="orchestrator" if i < 2 else "config-architect",
                 invoked_by="user",
                 timestamp=f"2025-11-03T12:{i:02d}:00Z",
-                duration_ms=1000 + i * 100
+                duration_ms=1000 + i * 100,
             )
 
         # Query all
@@ -447,7 +445,7 @@ class TestQueryFunctions:
         # Query by agent
         results = db.query_agent_performance(agent="orchestrator")
         assert len(results) == 2
-        assert all(r['agent_name'] == "orchestrator" for r in results)
+        assert all(r["agent_name"] == "orchestrator" for r in results)
 
         # Query by session
         results = db.query_agent_performance(session_id="session_20251103_120000")
@@ -466,7 +464,7 @@ class TestQueryFunctions:
                 event_id=f"evt_{i:03d}",
                 agent_name="config-architect",
                 tool_name=tool,
-                timestamp=f"2025-11-03T12:{i:02d}:00Z"
+                timestamp=f"2025-11-03T12:{i:02d}:00Z",
             )
 
         # Query by tool
@@ -491,7 +489,7 @@ class TestQueryFunctions:
                 agent_name="refactor-agent",
                 error_type=error_type,
                 error_message=f"Error {i}",
-                timestamp=f"2025-11-03T12:{i:02d}:00Z"
+                timestamp=f"2025-11-03T12:{i:02d}:00Z",
             )
 
         # Query by error type
@@ -514,7 +512,7 @@ class TestQueryFunctions:
                 event_id=f"evt_{i:03d}",
                 agent_name="orchestrator",
                 invoked_by="user",
-                timestamp=f"2025-11-03T12:{i:02d}:00Z"
+                timestamp=f"2025-11-03T12:{i:02d}:00Z",
             )
 
         # Query with limit
@@ -539,13 +537,12 @@ class TestQueryFunctions:
                 event_id=f"evt_{i:03d}",
                 agent_name="orchestrator",
                 invoked_by="user",
-                timestamp=ts
+                timestamp=ts,
             )
 
         # Query with date range
         results = db.query_agent_performance(
-            start_date="2025-11-02T00:00:00Z",
-            end_date="2025-11-03T23:59:59Z"
+            start_date="2025-11-02T00:00:00Z", end_date="2025-11-03T23:59:59Z"
         )
 
         assert len(results) == 2
@@ -554,6 +551,7 @@ class TestQueryFunctions:
 # ============================================================================
 # Test Convenience Functions
 # ============================================================================
+
 
 class TestConvenienceFunctions:
     """Tests for convenience functions."""
@@ -576,17 +574,17 @@ class TestConvenienceFunctions:
     def test_insert_event_agent_invocation(self, mock_config):
         """Test insert_event with agent invocation."""
         event_data = {
-            'event_type': 'agent_invocation',
-            'session_id': 'session_20251103_120000',
-            'event_id': 'evt_001',
-            'agent': 'orchestrator',
-            'invoked_by': 'user',
-            'timestamp': '2025-11-03T12:00:00Z',
-            'duration_ms': 1500,
-            'status': 'completed'
+            "event_type": "agent_invocation",
+            "session_id": "session_20251103_120000",
+            "event_id": "evt_001",
+            "agent": "orchestrator",
+            "invoked_by": "user",
+            "timestamp": "2025-11-03T12:00:00Z",
+            "duration_ms": 1500,
+            "status": "completed",
         }
 
-        result = analytics_db.insert_event('agent_invocation', event_data)
+        result = analytics_db.insert_event("agent_invocation", event_data)
 
         assert result is True
 
@@ -598,15 +596,15 @@ class TestConvenienceFunctions:
     def test_insert_event_tool_usage(self, mock_config):
         """Test insert_event with tool usage."""
         event_data = {
-            'session_id': 'session_20251103_120000',
-            'event_id': 'evt_002',
-            'agent': 'config-architect',
-            'tool': 'Write',
-            'timestamp': '2025-11-03T12:00:00Z',
-            'success': True
+            "session_id": "session_20251103_120000",
+            "event_id": "evt_002",
+            "agent": "config-architect",
+            "tool": "Write",
+            "timestamp": "2025-11-03T12:00:00Z",
+            "success": True,
         }
 
-        result = analytics_db.insert_event('tool_usage', event_data)
+        result = analytics_db.insert_event("tool_usage", event_data)
 
         assert result is True
 
@@ -617,7 +615,7 @@ class TestConvenienceFunctions:
 
     def test_insert_event_unknown_type(self, mock_config):
         """Test insert_event with unknown event type."""
-        result = analytics_db.insert_event('unknown_type', {})
+        result = analytics_db.insert_event("unknown_type", {})
 
         assert result is False
 
@@ -625,6 +623,7 @@ class TestConvenienceFunctions:
 # ============================================================================
 # Test Error Handling
 # ============================================================================
+
 
 class TestErrorHandling:
     """Tests for error handling and edge cases."""
@@ -666,12 +665,302 @@ class TestErrorHandling:
 
         # Should not crash even with empty strings
         result = db.insert_agent_performance(
-            session_id="",
-            event_id="",
-            agent_name="",
-            invoked_by="",
-            timestamp=""
+            session_id="", event_id="", agent_name="", invoked_by="", timestamp=""
         )
 
         # May fail validation but shouldn't crash
         assert isinstance(result, bool)
+
+    def test_initialize_handles_directory_creation_error(self, mock_config, monkeypatch):
+        """Test that initialize handles directory creation errors."""
+        db = analytics_db.AnalyticsDB()
+
+        # Mock mkdir to raise an exception
+        def mock_mkdir(*args, **kwargs):
+            raise OSError("Permission denied")
+
+        monkeypatch.setattr(Path, "mkdir", mock_mkdir)
+
+        # Should return False on error
+        result = db.initialize()
+        assert result is False
+
+    def test_query_functions_with_session_id_filter(self, mock_config):
+        """Test query functions with session_id parameter."""
+        db = analytics_db.AnalyticsDB()
+        db.initialize()
+
+        # Insert data for two sessions
+        db.insert_agent_performance(
+            session_id="session1",
+            event_id="evt_001",
+            agent_name="agent1",
+            invoked_by="user",
+            timestamp=datetime.utcnow().isoformat(),
+            duration_ms=100,
+        )
+
+        db.insert_agent_performance(
+            session_id="session2",
+            event_id="evt_002",
+            agent_name="agent1",
+            invoked_by="user",
+            timestamp=datetime.utcnow().isoformat(),
+            duration_ms=200,
+        )
+
+        # Query with session_id filter
+        results = db.query_agent_performance(agent="agent1", session_id="session1")
+        assert len(results) == 1
+        assert results[0]["session_id"] == "session1"
+
+        # Insert tool usage for testing
+        db.insert_tool_usage(
+            session_id="session1",
+            event_id="evt_003",
+            agent_name="agent1",
+            tool_name="Read",
+            timestamp=datetime.utcnow().isoformat(),
+        )
+
+        db.insert_tool_usage(
+            session_id="session2",
+            event_id="evt_004",
+            agent_name="agent1",
+            tool_name="Write",
+            timestamp=datetime.utcnow().isoformat(),
+        )
+
+        # Query tool usage with session_id
+        tool_results = db.query_tool_usage(session_id="session1")
+        assert len(tool_results) == 1
+        assert tool_results[0]["session_id"] == "session1"
+
+        # Insert error patterns for testing
+        db.insert_error_pattern(
+            session_id="session1",
+            event_id="evt_005",
+            agent_name="agent1",
+            error_type="TestError",
+            error_message="Test error message",
+            timestamp=datetime.utcnow().isoformat(),
+        )
+
+        db.insert_error_pattern(
+            session_id="session2",
+            event_id="evt_006",
+            agent_name="agent1",
+            error_type="TestError",
+            error_message="Test error message 2",
+            timestamp=datetime.utcnow().isoformat(),
+        )
+
+        # Query errors with session_id
+        error_results = db.query_error_patterns(session_id="session1")
+        assert len(error_results) == 1
+        assert error_results[0]["session_id"] == "session1"
+
+    def test_insert_functions_error_handling(self, mock_config, monkeypatch):
+        """Test that insert functions handle database errors gracefully."""
+        db = analytics_db.AnalyticsDB()
+        db.initialize()
+
+        # Mock get_connection to raise an exception
+        def mock_connection(*args, **kwargs):
+            raise sqlite3.OperationalError("Database locked")
+
+        monkeypatch.setattr(db, "get_connection", mock_connection)
+
+        # All insert functions should return False on error
+        assert (
+            db.insert_agent_performance(
+                session_id="test",
+                event_id="evt_001",
+                agent_name="agent",
+                invoked_by="user",
+                timestamp=datetime.utcnow().isoformat(),
+            )
+            is False
+        )
+
+        assert (
+            db.insert_tool_usage(
+                session_id="test",
+                event_id="evt_001",
+                agent_name="agent",
+                tool_name="Read",
+                timestamp=datetime.utcnow().isoformat(),
+            )
+            is False
+        )
+
+        assert (
+            db.insert_error_pattern(
+                session_id="test",
+                event_id="evt_001",
+                agent_name="agent",
+                error_type="TestError",
+                error_message="Test error",
+                timestamp=datetime.utcnow().isoformat(),
+            )
+            is False
+        )
+
+        assert (
+            db.insert_file_operation(
+                session_id="test",
+                event_id="evt_001",
+                agent_name="agent",
+                operation="read",
+                file_path="test.py",
+                timestamp=datetime.utcnow().isoformat(),
+            )
+            is False
+        )
+
+        assert (
+            db.insert_decision(
+                session_id="test",
+                event_id="evt_001",
+                agent_name="agent",
+                question="Test?",
+                selected="Option A",
+                timestamp=datetime.utcnow().isoformat(),
+            )
+            is False
+        )
+
+        assert (
+            db.insert_validation(
+                session_id="test",
+                event_id="evt_001",
+                agent_name="agent",
+                task="Task 1",
+                validation_type="test",
+                result="PASS",
+                timestamp=datetime.utcnow().isoformat(),
+            )
+            is False
+        )
+
+        assert (
+            db.insert_session(session_id="test", started_at=datetime.utcnow().isoformat()) is False
+        )
+
+    def test_query_functions_error_handling(self, mock_config, monkeypatch):
+        """Test that query functions handle database errors gracefully."""
+        db = analytics_db.AnalyticsDB()
+        db.initialize()
+
+        # Mock get_connection to raise an exception
+        def mock_connection(*args, **kwargs):
+            raise sqlite3.OperationalError("Database locked")
+
+        monkeypatch.setattr(db, "get_connection", mock_connection)
+
+        # Query functions should return empty lists on error
+        assert db.query_agent_performance() == []
+        assert db.query_tool_usage() == []
+        assert db.query_error_patterns() == []
+        assert db.get_session_summary("test_session") is None
+
+    def test_insert_event_with_all_event_types(self, mock_config):
+        """Test insert_event convenience function with all event types."""
+        analytics_db.get_analytics_db().initialize()
+
+        # Test all event types
+        assert (
+            analytics_db.insert_event(
+                "agent_invocation",
+                {
+                    "session_id": "test",
+                    "event_id": "evt_001",
+                    "agent": "agent1",
+                    "invoked_by": "user",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            is True
+        )
+
+        assert (
+            analytics_db.insert_event(
+                "tool_usage",
+                {
+                    "session_id": "test",
+                    "event_id": "evt_002",
+                    "agent": "agent1",
+                    "tool": "Read",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            is True
+        )
+
+        assert (
+            analytics_db.insert_event(
+                "error",
+                {
+                    "session_id": "test",
+                    "event_id": "evt_003",
+                    "agent": "agent1",
+                    "error_type": "TestError",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            is True
+        )
+
+        assert (
+            analytics_db.insert_event(
+                "file_operation",
+                {
+                    "session_id": "test",
+                    "event_id": "evt_004",
+                    "agent": "agent1",
+                    "operation": "read",
+                    "file_path": "test.py",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            is True
+        )
+
+        assert (
+            analytics_db.insert_event(
+                "decision",
+                {
+                    "session_id": "test",
+                    "event_id": "evt_005",
+                    "agent": "agent1",
+                    "question": "Test?",
+                    "selected": "Option A",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            is True
+        )
+
+        assert (
+            analytics_db.insert_event(
+                "validation",
+                {
+                    "session_id": "test",
+                    "event_id": "evt_006",
+                    "agent": "agent1",
+                    "task": "Task 1",
+                    "validation_type": "test",
+                    "result": "PASS",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            is True
+        )
+
+        # Test unknown event type returns False
+        assert (
+            analytics_db.insert_event(
+                "unknown_type", {"session_id": "test", "event_id": "evt_007", "agent": "agent1"}
+            )
+            is False
+        )

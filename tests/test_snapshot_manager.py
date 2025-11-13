@@ -42,6 +42,7 @@ from src.core.snapshot_manager import (
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def temp_state_dir():
     """Create a temporary state directory for testing."""
@@ -53,6 +54,7 @@ def temp_state_dir():
 @pytest.fixture
 def mock_config(temp_state_dir, monkeypatch):
     """Mock configuration with temp directories."""
+
     class MockConfig:
         def __init__(self):
             self.project_root = temp_state_dir
@@ -76,14 +78,18 @@ def mock_config(temp_state_dir, monkeypatch):
             return self.handoffs_dir / f"{session_id}_handoff.md"
 
     from src.core import config
+
     test_config = MockConfig()
-    monkeypatch.setattr(config, 'get_config', lambda: test_config)
+    monkeypatch.setattr(config, "get_config", lambda: test_config)
 
     # Also mock activity logger session_id and event_count
     from src.core import activity_logger
-    monkeypatch.setattr(activity_logger, 'get_current_session_id', lambda: "session_20251103_120000")
-    monkeypatch.setattr(activity_logger, 'get_event_count', lambda: 42)
-    monkeypatch.setattr(activity_logger, 'log_context_snapshot', lambda **kwargs: "evt_001")
+
+    monkeypatch.setattr(
+        activity_logger, "get_current_session_id", lambda: "session_20251103_120000"
+    )
+    monkeypatch.setattr(activity_logger, "get_event_count", lambda: 42)
+    monkeypatch.setattr(activity_logger, "log_context_snapshot", lambda **kwargs: "evt_001")
 
     # Reset snapshot counter
     reset_snapshot_counter()
@@ -95,6 +101,7 @@ def mock_config(temp_state_dir, monkeypatch):
 # Test: Snapshot Creation
 # ============================================================================
 
+
 class TestSnapshotCreation:
     """Tests for take_snapshot() function."""
 
@@ -105,7 +112,7 @@ class TestSnapshotCreation:
             agent_count=5,
             token_count=10000,
             tokens_remaining=190000,
-            files_in_context=["file1.py", "file2.py"]
+            files_in_context=["file1.py", "file2.py"],
         )
 
         assert snapshot_id == "snap_001"
@@ -133,14 +140,14 @@ class TestSnapshotCreation:
             token_count=20000,
             tokens_remaining=180000,
             files_in_context=["test.py"],
-            agent_context={"current_agent": "orchestrator", "tasks": ["Task 1"]}
+            agent_context={"current_agent": "orchestrator", "tasks": ["Task 1"]},
         )
 
         # Load and verify snapshot
         snapshot_path = mock_config.get_snapshot_path("session_20251103_120000", 1)
         compressed_path = Path(str(snapshot_path) + ".gz")
 
-        with gzip.open(compressed_path, 'rt', encoding='utf-8') as f:
+        with gzip.open(compressed_path, "rt", encoding="utf-8") as f:
             data = json.load(f)
 
         # Check structure
@@ -188,16 +195,14 @@ class TestSnapshotCreation:
     def test_snapshot_with_additional_metadata(self, mock_config):
         """Test snapshot with extra kwargs."""
         snapshot_id = take_snapshot(
-            trigger="manual",
-            custom_field="custom_value",
-            debug_info={"test": True}
+            trigger="manual", custom_field="custom_value", debug_info={"test": True}
         )
 
         # Load and verify
         snapshot_path = mock_config.get_snapshot_path("session_20251103_120000", 1)
         compressed_path = Path(str(snapshot_path) + ".gz")
 
-        with gzip.open(compressed_path, 'rt', encoding='utf-8') as f:
+        with gzip.open(compressed_path, "rt", encoding="utf-8") as f:
             data = json.load(f)
 
         assert "additional_metadata" in data
@@ -208,6 +213,7 @@ class TestSnapshotCreation:
 # ============================================================================
 # Test: Snapshot Restoration
 # ============================================================================
+
 
 class TestSnapshotRestoration:
     """Tests for restore_snapshot() function."""
@@ -259,7 +265,7 @@ class TestSnapshotRestoration:
             agent_count=10,
             token_count=20000,
             files_in_context=[f"file{i}.py" for i in range(50)],
-            agent_context={"data": "x" * 1000}
+            agent_context={"data": "x" * 1000},
         )
 
         # Measure restore time
@@ -273,6 +279,7 @@ class TestSnapshotRestoration:
 # ============================================================================
 # Test: Snapshot Listing
 # ============================================================================
+
 
 class TestSnapshotListing:
     """Tests for list_snapshots() function."""
@@ -319,6 +326,7 @@ class TestSnapshotListing:
 # Test: Snapshot Cleanup
 # ============================================================================
 
+
 class TestSnapshotCleanup:
     """Tests for cleanup_old_snapshots() function."""
 
@@ -350,6 +358,7 @@ class TestSnapshotCleanup:
         snapshot_files[1].touch()
 
         import os
+
         os.utime(snapshot_files[0], (old_time, old_time))
         os.utime(snapshot_files[1], (old_time, old_time))
 
@@ -368,6 +377,7 @@ class TestSnapshotCleanup:
         old_time = time.time() - (2 * 24 * 3600)
 
         import os
+
         os.utime(snapshot_files[0], (old_time, old_time))
 
         # Cleanup with 1-day retention should delete it
@@ -380,6 +390,7 @@ class TestSnapshotCleanup:
 # Test: Handoff Summary
 # ============================================================================
 
+
 class TestHandoffSummary:
     """Tests for create_handoff_summary() function."""
 
@@ -391,7 +402,7 @@ class TestHandoffSummary:
             agent_count=10,
             token_count=20000,
             tokens_remaining=180000,
-            files_in_context=["test.py"]
+            files_in_context=["test.py"],
         )
 
         # Create handoff summary
@@ -401,7 +412,7 @@ class TestHandoffSummary:
         assert Path(handoff_path).exists()
 
         # Read and verify content
-        with open(handoff_path, 'r') as f:
+        with open(handoff_path, "r") as f:
             content = f.read()
 
         assert "# Session Handoff Summary" in content
@@ -417,7 +428,7 @@ class TestHandoffSummary:
         # Verify file was created
         assert Path(handoff_path).exists()
 
-        with open(handoff_path, 'r') as f:
+        with open(handoff_path, "r") as f:
             content = f.read()
 
         assert "No snapshot available" in content
@@ -425,13 +436,13 @@ class TestHandoffSummary:
     def test_handoff_with_git_state(self, mock_config):
         """Test handoff includes git state information."""
         # Mock git state
-        with patch('src.core.snapshot_manager.get_git_state') as mock_git:
+        with patch("src.core.snapshot_manager.get_git_state") as mock_git:
             mock_git.return_value = {
                 "is_git_repo": True,
                 "current_branch": "feature/test",
                 "latest_commit": "abc123def456",
                 "uncommitted_changes": True,
-                "modified_files": ["src/core/snapshot_manager.py"]
+                "modified_files": ["src/core/snapshot_manager.py"],
             }
 
             # Create snapshot with mocked git state
@@ -440,7 +451,7 @@ class TestHandoffSummary:
         # Create handoff
         handoff_path = create_handoff_summary()
 
-        with open(handoff_path, 'r') as f:
+        with open(handoff_path, "r") as f:
             content = f.read()
 
         assert "## Git State" in content
@@ -454,17 +465,40 @@ class TestHandoffSummary:
 
         handoff_path = create_handoff_summary()
 
-        with open(handoff_path, 'r') as f:
+        with open(handoff_path, "r") as f:
             content = f.read()
 
         assert "## Recovery Instructions" in content
         assert "restore_snapshot" in content
         assert "Resume from session" in content
 
+    def test_handoff_performance_target(self, mock_config):
+        """Test that handoff summary generation meets <500ms target."""
+        # Create a snapshot with moderate data
+        take_snapshot(
+            trigger="manual",
+            agent_count=50,
+            token_count=100000,
+            tokens_remaining=100000,
+            files_in_context=[f"file{i}.py" for i in range(100)],
+            agent_context={"tasks": [f"Task {i}" for i in range(50)]},
+        )
+
+        # Measure handoff generation time
+        start_time = time.time()
+        handoff_path = create_handoff_summary(reason="performance_test")
+        duration_ms = (time.time() - start_time) * 1000
+
+        assert duration_ms < 500, f"Handoff generation took {duration_ms:.2f}ms (target: <500ms)"
+
+        # Verify file was created successfully
+        assert Path(handoff_path).exists()
+
 
 # ============================================================================
 # Test: Trigger Detection
 # ============================================================================
+
 
 class TestTriggerDetection:
     """Tests for should_take_snapshot() function."""
@@ -517,11 +551,13 @@ class TestTriggerDetection:
 # Test: Git Integration
 # ============================================================================
 
+
 class TestGitIntegration:
     """Tests for get_git_state() function."""
 
     def test_git_state_in_repo(self, mock_config, monkeypatch):
         """Test git state when in a git repository."""
+
         # Mock subprocess to simulate git repo
         def mock_run(cmd, **kwargs):
             result = MagicMock()
@@ -539,7 +575,8 @@ class TestGitIntegration:
             return result
 
         import subprocess
-        monkeypatch.setattr(subprocess, 'run', mock_run)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
 
         git_state = get_git_state()
 
@@ -551,13 +588,16 @@ class TestGitIntegration:
 
     def test_git_state_not_in_repo(self, mock_config, monkeypatch):
         """Test git state when not in a git repository."""
+
         # Mock subprocess to simulate no git repo
         def mock_run(cmd, **kwargs):
             import subprocess
+
             raise subprocess.CalledProcessError(128, cmd)
 
         import subprocess
-        monkeypatch.setattr(subprocess, 'run', mock_run)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
 
         git_state = get_git_state()
 
@@ -568,6 +608,7 @@ class TestGitIntegration:
 # ============================================================================
 # Test: Performance
 # ============================================================================
+
 
 class TestPerformance:
     """Tests for performance requirements."""
@@ -582,7 +623,7 @@ class TestPerformance:
             token_count=50000,
             tokens_remaining=150000,
             files_in_context=[f"file{i}.py" for i in range(100)],
-            agent_context={"tasks": [f"Task {i}" for i in range(20)]}
+            agent_context={"tasks": [f"Task {i}" for i in range(20)]},
         )
 
         duration_ms = (time.time() - start_time) * 1000
@@ -596,11 +637,7 @@ class TestPerformance:
         start_time = time.time()
 
         for i in range(iterations):
-            take_snapshot(
-                trigger="manual",
-                agent_count=i * 10,
-                token_count=i * 5000
-            )
+            take_snapshot(trigger="manual", agent_count=i * 10, token_count=i * 5000)
 
         total_time_ms = (time.time() - start_time) * 1000
         avg_time_ms = total_time_ms / iterations
@@ -612,6 +649,7 @@ class TestPerformance:
 # Test: Error Handling
 # ============================================================================
 
+
 class TestErrorHandling:
     """Tests for error handling."""
 
@@ -622,7 +660,7 @@ class TestErrorHandling:
 
         # Create a corrupted snapshot file
         corrupt_path = mock_config.state_dir / "session_20251103_120000_snap002.json.gz"
-        with gzip.open(corrupt_path, 'wt') as f:
+        with gzip.open(corrupt_path, "wt") as f:
             f.write("not valid json {{{")
 
         # List should skip corrupted file
@@ -638,7 +676,7 @@ class TestErrorHandling:
         def mock_gzip_open(*args, **kwargs):
             raise IOError("Disk full")
 
-        monkeypatch.setattr(gzip, 'open', mock_gzip_open)
+        monkeypatch.setattr(gzip, "open", mock_gzip_open)
 
         # Should not raise exception, just return snapshot_id
         snapshot_id = take_snapshot(trigger="manual")
@@ -651,7 +689,7 @@ class TestErrorHandling:
         snapshot_path = mock_config.get_snapshot_path("session_20251103_120000", 1)
         compressed_path = Path(str(snapshot_path) + ".gz")
 
-        with gzip.open(compressed_path, 'wt') as f:
+        with gzip.open(compressed_path, "wt") as f:
             f.write("invalid json")
 
         with pytest.raises(json.JSONDecodeError):
@@ -662,6 +700,7 @@ class TestErrorHandling:
 # Test: Integration
 # ============================================================================
 
+
 class TestIntegration:
     """Integration tests for complete workflows."""
 
@@ -669,16 +708,10 @@ class TestIntegration:
         """Test complete snapshot creation, listing, and restoration workflow."""
         # Create multiple snapshots
         snap1 = take_snapshot(
-            trigger="manual",
-            agent_count=10,
-            token_count=20000,
-            tokens_remaining=180000
+            trigger="manual", agent_count=10, token_count=20000, tokens_remaining=180000
         )
         snap2 = take_snapshot(
-            trigger="agent_count",
-            agent_count=20,
-            token_count=40000,
-            tokens_remaining=160000
+            trigger="agent_count", agent_count=20, token_count=40000, tokens_remaining=160000
         )
 
         # List snapshots
@@ -710,6 +743,7 @@ class TestIntegration:
         old_time = time.time() - (10 * 24 * 3600)
 
         import os
+
         for f in snapshot_files[:3]:
             os.utime(f, (old_time, old_time))
 

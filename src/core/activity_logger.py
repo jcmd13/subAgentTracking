@@ -64,6 +64,7 @@ from src.core.schemas import (
 # Session and Event ID Management
 # ============================================================================
 
+
 class EventCounter:
     """Thread-safe sequential event ID generator."""
 
@@ -111,7 +112,7 @@ def get_iso_timestamp() -> str:
     Returns:
         ISO timestamp (e.g., "2025-11-02T15:30:45.123Z")
     """
-    return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 # ============================================================================
@@ -124,6 +125,7 @@ def get_iso_timestamp() -> str:
 # ============================================================================
 # Thread-based JSONL Writer
 # ============================================================================
+
 
 class ThreadedJSONLWriter:
     """
@@ -156,9 +158,7 @@ class ThreadedJSONLWriter:
 
             self._running = True
             self.writer_thread = threading.Thread(
-                target=self._writer_loop,
-                daemon=True,
-                name="ActivityLoggerWriter"
+                target=self._writer_loop, daemon=True, name="ActivityLoggerWriter"
             )
             self.writer_thread.start()
 
@@ -182,9 +182,9 @@ class ThreadedJSONLWriter:
 
         # Open file with appropriate compression
         if self.use_compression:
-            file_handle = gzip.open(self.file_path, 'at', encoding='utf-8')
+            file_handle = gzip.open(self.file_path, "at", encoding="utf-8")
         else:
-            file_handle = open(self.file_path, 'a', encoding='utf-8')
+            file_handle = open(self.file_path, "a", encoding="utf-8")
 
         try:
             while self._running:
@@ -197,7 +197,7 @@ class ThreadedJSONLWriter:
 
                     # Write event as single line JSON
                     json_line = json.dumps(event, ensure_ascii=False)
-                    file_handle.write(json_line + '\n')
+                    file_handle.write(json_line + "\n")
                     file_handle.flush()
 
                 except queue.Empty:
@@ -206,6 +206,7 @@ class ThreadedJSONLWriter:
                 except Exception as e:
                     # Log error but keep running
                     import sys
+
                     print(f"Error writing event: {e}", file=sys.stderr)
         finally:
             # Flush any remaining events
@@ -214,7 +215,7 @@ class ThreadedJSONLWriter:
                     event = self.event_queue.get_nowait()
                     if event is not None:
                         json_line = json.dumps(event, ensure_ascii=False)
-                        file_handle.write(json_line + '\n')
+                        file_handle.write(json_line + "\n")
                 except queue.Empty:
                     break
                 except Exception:
@@ -238,6 +239,7 @@ class ThreadedJSONLWriter:
             self.writer_thread.join(timeout=5.0)
             if self.writer_thread.is_alive():
                 import sys
+
                 print("Warning: Writer thread shutdown timeout", file=sys.stderr)
 
 
@@ -256,6 +258,7 @@ _init_lock = threading.Lock()
 # ============================================================================
 # Log Rotation and Cleanup
 # ============================================================================
+
 
 def list_log_files() -> List[Dict[str, Any]]:
     """
@@ -286,13 +289,13 @@ def list_log_files() -> List[Dict[str, Any]]:
             continue
 
         # Check if it's a log file
-        is_compressed = file_path.suffix == '.gz'
+        is_compressed = file_path.suffix == ".gz"
         if is_compressed:
             # .jsonl.gz file
-            if not file_path.stem.endswith('.jsonl'):
+            if not file_path.stem.endswith(".jsonl"):
                 continue
-            session_id = file_path.stem.replace('.jsonl', '')
-        elif file_path.suffix == '.jsonl':
+            session_id = file_path.stem.replace(".jsonl", "")
+        elif file_path.suffix == ".jsonl":
             # .jsonl file
             session_id = file_path.stem
         else:
@@ -301,12 +304,12 @@ def list_log_files() -> List[Dict[str, Any]]:
 
         # Validate session ID format (should start with "session_" and follow pattern)
         # Expected format: session_YYYYMMDD_HHMMSS
-        if not session_id.startswith('session_'):
+        if not session_id.startswith("session_"):
             continue
 
         # Check that the part after "session_" looks like a date/time
         # (at minimum, should be session_ followed by digits and underscores)
-        session_suffix = session_id.replace('session_', '', 1)
+        session_suffix = session_id.replace("session_", "", 1)
         if not session_suffix:  # Empty after removing prefix
             continue
 
@@ -318,16 +321,18 @@ def list_log_files() -> List[Dict[str, Any]]:
         # Get file stats
         stat = file_path.stat()
 
-        log_files.append({
-            'file_path': file_path,
-            'session_id': session_id,
-            'file_size_bytes': stat.st_size,
-            'creation_time': stat.st_ctime,
-            'is_compressed': is_compressed,
-        })
+        log_files.append(
+            {
+                "file_path": file_path,
+                "session_id": session_id,
+                "file_size_bytes": stat.st_size,
+                "creation_time": stat.st_ctime,
+                "is_compressed": is_compressed,
+            }
+        )
 
     # Sort by creation time (newest first)
-    log_files.sort(key=lambda f: f['creation_time'], reverse=True)
+    log_files.sort(key=lambda f: f["creation_time"], reverse=True)
 
     return log_files
 
@@ -352,21 +357,21 @@ def get_log_file_stats() -> Dict[str, Any]:
 
     if not log_files:
         return {
-            'total_files': 0,
-            'total_size_bytes': 0,
-            'oldest_session': None,
-            'newest_session': None,
-            'current_session': get_current_session_id(),
+            "total_files": 0,
+            "total_size_bytes": 0,
+            "oldest_session": None,
+            "newest_session": None,
+            "current_session": get_current_session_id(),
         }
 
-    total_size = sum(f['file_size_bytes'] for f in log_files)
+    total_size = sum(f["file_size_bytes"] for f in log_files)
 
     return {
-        'total_files': len(log_files),
-        'total_size_bytes': total_size,
-        'oldest_session': log_files[-1]['session_id'],  # Last in sorted list
-        'newest_session': log_files[0]['session_id'],   # First in sorted list
-        'current_session': get_current_session_id(),
+        "total_files": len(log_files),
+        "total_size_bytes": total_size,
+        "oldest_session": log_files[-1]["session_id"],  # Last in sorted list
+        "newest_session": log_files[0]["session_id"],  # First in sorted list
+        "current_session": get_current_session_id(),
     }
 
 
@@ -404,11 +409,11 @@ def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
 
     if not log_files:
         return {
-            'files_deleted': 0,
-            'files_kept': 0,
-            'bytes_freed': 0,
-            'sessions_deleted': [],
-            'errors': [],
+            "files_deleted": 0,
+            "files_kept": 0,
+            "bytes_freed": 0,
+            "sessions_deleted": [],
+            "errors": [],
         }
 
     # Get current session (never delete this)
@@ -419,7 +424,7 @@ def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
     current_session_files = []
 
     for file_info in log_files:
-        if file_info['session_id'] == current_session:
+        if file_info["session_id"] == current_session:
             current_session_files.append(file_info)
         else:
             files_to_evaluate.append(file_info)
@@ -443,9 +448,9 @@ def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
 
     for file_info in files_to_delete:
         try:
-            file_path = file_info['file_path']
-            file_size = file_info['file_size_bytes']
-            session_id = file_info['session_id']
+            file_path = file_info["file_path"]
+            file_size = file_info["file_size_bytes"]
+            session_id = file_info["session_id"]
 
             file_path.unlink()
 
@@ -457,23 +462,25 @@ def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
             error_msg = f"Failed to delete {file_path}: {str(e)}"
             errors.append(error_msg)
             import sys
+
             print(f"Warning: {error_msg}", file=sys.stderr)
 
     # Calculate files kept (current + kept previous sessions)
     files_kept = len(current_session_files) + len(files_to_keep)
 
     return {
-        'files_deleted': deleted_count,
-        'files_kept': files_kept,
-        'bytes_freed': bytes_freed,
-        'sessions_deleted': sessions_deleted,
-        'errors': errors,
+        "files_deleted": deleted_count,
+        "files_kept": files_kept,
+        "bytes_freed": bytes_freed,
+        "sessions_deleted": sessions_deleted,
+        "errors": errors,
     }
 
 
 # ============================================================================
 # Lifecycle Functions
 # ============================================================================
+
 
 def initialize(session_id: Optional[str] = None):
     """
@@ -502,13 +509,10 @@ def initialize(session_id: Optional[str] = None):
             # Create log file path
             log_path = config.logs_dir / f"{_session_id}.jsonl"
             if config.activity_log_compression:
-                log_path = log_path.with_suffix('.jsonl.gz')
+                log_path = log_path.with_suffix(".jsonl.gz")
 
             # Create threaded writer
-            _writer = ThreadedJSONLWriter(
-                log_path,
-                use_compression=config.activity_log_compression
-            )
+            _writer = ThreadedJSONLWriter(log_path, use_compression=config.activity_log_compression)
             _writer.start()
 
             # Register shutdown handler
@@ -519,6 +523,7 @@ def initialize(session_id: Optional[str] = None):
                 rotate_logs()
             except Exception as e:
                 import sys
+
                 print(f"Warning: Log rotation on startup failed: {e}", file=sys.stderr)
 
         _initialized = True
@@ -529,11 +534,24 @@ def shutdown():
     Shutdown the activity logger.
 
     Flushes all queued events and closes log file.
+    Triggers automatic backup if enabled.
     """
     global _writer, _initialized
 
     if not _initialized:
         return
+
+    # Trigger automatic backup before shutdown (if enabled)
+    try:
+        from src.core.backup_integration import backup_on_shutdown
+
+        backup_on_shutdown()
+    except ImportError:
+        # Backup integration not available, continue with shutdown
+        pass
+    except Exception:
+        # Backup failed, but continue with shutdown
+        pass
 
     if _writer:
         _writer.shutdown()
@@ -566,6 +584,7 @@ def get_event_count() -> int:
 # Internal Event Writing
 # ============================================================================
 
+
 def _write_event(event: dict, event_type: str) -> str:
     """
     Internal function to write event to log.
@@ -585,7 +604,7 @@ def _write_event(event: dict, event_type: str) -> str:
 
     # Skip if logging disabled
     if not config.activity_log_enabled or not _writer:
-        return event.get('event_id', 'evt_000')
+        return event.get("event_id", "evt_000")
 
     # Validate schema using Pydantic if enabled
     if config.validate_event_schemas:
@@ -600,17 +619,19 @@ def _write_event(event: dict, event_type: str) -> str:
                 raise ValueError(error_msg)
             else:
                 import sys
+
                 print(f"Warning: {error_msg}", file=sys.stderr)
 
     # Write event (non-blocking queue operation)
     _writer.write_event(event)
 
-    return event['event_id']
+    return event["event_id"]
 
 
 # ============================================================================
 # Public Logging API
 # ============================================================================
+
 
 def log_agent_invocation(
     agent: str,
@@ -621,7 +642,7 @@ def log_agent_invocation(
     result: Optional[Dict[str, Any]] = None,
     duration_ms: Optional[int] = None,
     tokens_consumed: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log an agent invocation event.
@@ -658,33 +679,33 @@ def log_agent_invocation(
 
     # Build event matching AgentInvocationEvent schema (flat structure)
     event = {
-        'event_type': 'agent_invocation',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': parent_id,
-        'agent': agent,
-        'invoked_by': invoked_by,
-        'reason': reason,
-        'status': status,
+        "event_type": "agent_invocation",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "invoked_by": invoked_by,
+        "reason": reason,
+        "status": status,
     }
 
     # Add optional fields
     if context:
-        event['context'] = context
+        event["context"] = context
     if result:
-        event['result'] = result
+        event["result"] = result
     if duration_ms is not None:
-        event['duration_ms'] = duration_ms
+        event["duration_ms"] = duration_ms
     if tokens_consumed is not None:
-        event['tokens_consumed'] = tokens_consumed
+        event["tokens_consumed"] = tokens_consumed
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'agent_invocation')
+    return _write_event(event, "agent_invocation")
 
 
 def log_tool_usage(
@@ -696,7 +717,7 @@ def log_tool_usage(
     success: bool = True,
     error_message: Optional[str] = None,
     result_summary: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log a tool usage event.
@@ -734,34 +755,34 @@ def log_tool_usage(
 
     # Build event matching ToolUsageEvent schema (flat structure)
     event = {
-        'event_type': 'tool_usage',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': parent_id,
-        'agent': agent,
-        'tool': tool,
-        'success': success,
+        "event_type": "tool_usage",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "tool": tool,
+        "success": success,
     }
 
     # Add optional fields
     if operation:
-        event['operation'] = operation
+        event["operation"] = operation
     if parameters:
-        event['parameters'] = parameters
+        event["parameters"] = parameters
     if duration_ms is not None:
-        event['duration_ms'] = duration_ms
+        event["duration_ms"] = duration_ms
     if error_message:
-        event['error_message'] = error_message
+        event["error_message"] = error_message
     if result_summary:
-        event['result_summary'] = result_summary
+        event["result_summary"] = result_summary
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'tool_usage')
+    return _write_event(event, "tool_usage")
 
 
 def log_file_operation(
@@ -774,7 +795,7 @@ def log_file_operation(
     git_hash_after: Optional[str] = None,
     file_size_bytes: Optional[int] = None,
     language: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log a file operation event.
@@ -813,36 +834,36 @@ def log_file_operation(
 
     # Build event matching FileOperationEvent schema (flat structure)
     event = {
-        'event_type': 'file_operation',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': parent_id,
-        'agent': agent,
-        'operation': operation,
-        'file_path': file_path,
+        "event_type": "file_operation",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "operation": operation,
+        "file_path": file_path,
     }
 
     # Add optional fields
     if lines_changed is not None:
-        event['lines_changed'] = lines_changed
+        event["lines_changed"] = lines_changed
     if diff:
-        event['diff'] = diff
+        event["diff"] = diff
     if git_hash_before:
-        event['git_hash_before'] = git_hash_before
+        event["git_hash_before"] = git_hash_before
     if git_hash_after:
-        event['git_hash_after'] = git_hash_after
+        event["git_hash_after"] = git_hash_after
     if file_size_bytes is not None:
-        event['file_size_bytes'] = file_size_bytes
+        event["file_size_bytes"] = file_size_bytes
     if language:
-        event['language'] = language
+        event["language"] = language
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'file_operation')
+    return _write_event(event, "file_operation")
 
 
 def log_decision(
@@ -853,7 +874,7 @@ def log_decision(
     rationale: str,
     confidence: Optional[float] = None,
     alternative_considered: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log a decision event.
@@ -891,30 +912,30 @@ def log_decision(
 
     # Build event matching DecisionEvent schema (flat structure)
     event = {
-        'event_type': 'decision',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': parent_id,
-        'agent': agent,
-        'question': question,
-        'options': options,
-        'selected': selected,
-        'rationale': rationale,
+        "event_type": "decision",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "question": question,
+        "options": options,
+        "selected": selected,
+        "rationale": rationale,
     }
 
     # Add optional fields
     if confidence is not None:
-        event['confidence'] = confidence
+        event["confidence"] = confidence
     if alternative_considered:
-        event['alternative_considered'] = alternative_considered
+        event["alternative_considered"] = alternative_considered
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'decision')
+    return _write_event(event, "decision")
 
 
 def log_error(
@@ -927,7 +948,7 @@ def log_error(
     attempted_fix: Optional[str] = None,
     fix_successful: Optional[bool] = None,
     recovery_time_ms: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log an error event.
@@ -968,34 +989,34 @@ def log_error(
 
     # Build event matching ErrorEvent schema (flat structure)
     event = {
-        'event_type': 'error',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': parent_id,
-        'agent': agent,
-        'error_type': error_type,
-        'error_message': error_message,
-        'severity': severity,
-        'context': context,
+        "event_type": "error",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "error_type": error_type,
+        "error_message": error_message,
+        "severity": severity,
+        "context": context,
     }
 
     # Add optional fields
     if stack_trace:
-        event['stack_trace'] = stack_trace
+        event["stack_trace"] = stack_trace
     if attempted_fix:
-        event['attempted_fix'] = attempted_fix
+        event["attempted_fix"] = attempted_fix
     if fix_successful is not None:
-        event['fix_successful'] = fix_successful
+        event["fix_successful"] = fix_successful
     if recovery_time_ms is not None:
-        event['recovery_time_ms'] = recovery_time_ms
+        event["recovery_time_ms"] = recovery_time_ms
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'error')
+    return _write_event(event, "error")
 
 
 def log_context_snapshot(
@@ -1007,7 +1028,7 @@ def log_context_snapshot(
     tokens_total_budget: int = 200000,
     memory_mb: Optional[float] = None,
     agent: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log a context snapshot event.
@@ -1045,32 +1066,32 @@ def log_context_snapshot(
 
     # Build event matching ContextSnapshotEvent schema (flat structure)
     event = {
-        'event_type': 'context_snapshot',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': None,  # Snapshots are top-level
-        'tokens_before': tokens_before,
-        'tokens_after': tokens_after,
-        'tokens_consumed': tokens_consumed,
-        'tokens_remaining': tokens_remaining,
-        'tokens_total_budget': tokens_total_budget,
-        'files_in_context': files_in_context,
-        'files_in_context_count': len(files_in_context),
+        "event_type": "context_snapshot",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": None,  # Snapshots are top-level
+        "tokens_before": tokens_before,
+        "tokens_after": tokens_after,
+        "tokens_consumed": tokens_consumed,
+        "tokens_remaining": tokens_remaining,
+        "tokens_total_budget": tokens_total_budget,
+        "files_in_context": files_in_context,
+        "files_in_context_count": len(files_in_context),
     }
 
     # Add optional fields
     if memory_mb is not None:
-        event['memory_mb'] = memory_mb
+        event["memory_mb"] = memory_mb
     if agent:
-        event['agent'] = agent
+        event["agent"] = agent
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'context_snapshot')
+    return _write_event(event, "context_snapshot")
 
 
 def log_validation(
@@ -1082,7 +1103,7 @@ def log_validation(
     failures: Optional[List[str]] = None,
     warnings: Optional[List[str]] = None,
     metrics: Optional[Dict[str, Any]] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Log a validation event.
@@ -1121,37 +1142,38 @@ def log_validation(
 
     # Build event matching ValidationEvent schema (flat structure)
     event = {
-        'event_type': 'validation',
-        'timestamp': get_iso_timestamp(),
-        'session_id': _session_id,
-        'event_id': event_id,
-        'parent_event_id': parent_id,
-        'agent': agent,
-        'task': task,
-        'validation_type': validation_type,
-        'checks': checks,
-        'result': result,
+        "event_type": "validation",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "task": task,
+        "validation_type": validation_type,
+        "checks": checks,
+        "result": result,
     }
 
     # Add optional fields
     if failures:
-        event['failures'] = failures
+        event["failures"] = failures
     if warnings:
-        event['warnings'] = warnings
+        event["warnings"] = warnings
     if metrics:
-        event['metrics'] = metrics
+        event["metrics"] = metrics
 
     # Add any additional fields from kwargs
     for key, value in kwargs.items():
         if key not in event:
             event[key] = value
 
-    return _write_event(event, 'validation')
+    return _write_event(event, "validation")
 
 
 # ============================================================================
 # Context Manager Support
 # ============================================================================
+
 
 @contextmanager
 def tool_usage_context(
@@ -1159,7 +1181,7 @@ def tool_usage_context(
     tool: str,
     operation: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
-    **kwargs
+    **kwargs,
 ):
     """
     Context manager for tool usage logging with automatic duration tracking.
@@ -1212,7 +1234,7 @@ def tool_usage_context(
             duration_ms=duration_ms,
             success=success,
             error_message=error_msg,
-            **kwargs
+            **kwargs,
         )
 
         # Update parent stack with actual event ID
@@ -1225,11 +1247,7 @@ def tool_usage_context(
 
 @contextmanager
 def agent_invocation_context(
-    agent: str,
-    invoked_by: str,
-    reason: str,
-    context: Optional[Dict[str, Any]] = None,
-    **kwargs
+    agent: str, invoked_by: str, reason: str, context: Optional[Dict[str, Any]] = None, **kwargs
 ):
     """
     Context manager for agent invocation logging.
@@ -1253,11 +1271,7 @@ def agent_invocation_context(
     """
     # Log invocation
     event_id = log_agent_invocation(
-        agent=agent,
-        invoked_by=invoked_by,
-        reason=reason,
-        context=context,
-        **kwargs
+        agent=agent, invoked_by=invoked_by, reason=reason, context=context, **kwargs
     )
 
     # Push onto parent stack

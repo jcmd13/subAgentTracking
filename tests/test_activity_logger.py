@@ -54,6 +54,7 @@ from src.core.schemas import (
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def temp_log_dir(tmp_path):
     """Create temporary directory for log files."""
@@ -65,6 +66,7 @@ def temp_log_dir(tmp_path):
 @pytest.fixture
 def logger_session(temp_log_dir, monkeypatch):
     """Initialize logger with temp directory and clean up after test."""
+
     # Create a simple mock config object
     class MockConfig:
         def __init__(self):
@@ -75,9 +77,10 @@ def logger_session(temp_log_dir, monkeypatch):
             self.strict_mode = True
 
     from src.core import config
+
     test_config = MockConfig()
 
-    monkeypatch.setattr(config, 'get_config', lambda: test_config)
+    monkeypatch.setattr(config, "get_config", lambda: test_config)
 
     # Initialize logger
     initialize()
@@ -91,6 +94,7 @@ def logger_session(temp_log_dir, monkeypatch):
 # ============================================================================
 # Test EventCounter
 # ============================================================================
+
 
 class TestEventCounter:
     """Test thread-safe event ID generation."""
@@ -144,10 +148,7 @@ class TestEventCounter:
                 ids.append(counter.next_id())
 
         # Create multiple threads generating IDs
-        threads = [
-            threading.Thread(target=generate_ids, args=(100,))
-            for _ in range(5)
-        ]
+        threads = [threading.Thread(target=generate_ids, args=(100,)) for _ in range(5)]
 
         for thread in threads:
             thread.start()
@@ -163,6 +164,7 @@ class TestEventCounter:
 # ============================================================================
 # Test Session and Timestamp Generation
 # ============================================================================
+
 
 class TestSessionAndTimestamp:
     """Test session ID and timestamp generation."""
@@ -180,19 +182,20 @@ class TestSessionAndTimestamp:
         timestamp = get_iso_timestamp()
 
         # Should contain 'T' separator
-        assert 'T' in timestamp
+        assert "T" in timestamp
 
         # Should end with 'Z' for UTC
-        assert timestamp.endswith('Z')
+        assert timestamp.endswith("Z")
 
         # Should be parseable
-        parsed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         assert isinstance(parsed, datetime)
 
 
 # ============================================================================
 # Test ThreadedJSONLWriter
 # ============================================================================
+
 
 class TestThreadedJSONLWriter:
     """Test async JSONL writer with queue buffering."""
@@ -203,17 +206,13 @@ class TestThreadedJSONLWriter:
         writer = ThreadedJSONLWriter(log_path, use_compression=False)
         writer.start()
 
-        event = {
-            'event_type': 'test',
-            'timestamp': '2025-11-02T15:30:00Z',
-            'data': 'test data'
-        }
+        event = {"event_type": "test", "timestamp": "2025-11-02T15:30:00Z", "data": "test data"}
 
         writer.write_event(event)
         writer.shutdown()
 
         # Read file and verify
-        with open(log_path, 'r') as f:
+        with open(log_path, "r") as f:
             line = f.readline()
             parsed = json.loads(line)
             assert parsed == event
@@ -225,9 +224,9 @@ class TestThreadedJSONLWriter:
         writer.start()
 
         events = [
-            {'event_type': 'test1', 'data': 'data1'},
-            {'event_type': 'test2', 'data': 'data2'},
-            {'event_type': 'test3', 'data': 'data3'},
+            {"event_type": "test1", "data": "data1"},
+            {"event_type": "test2", "data": "data2"},
+            {"event_type": "test3", "data": "data3"},
         ]
 
         for event in events:
@@ -236,7 +235,7 @@ class TestThreadedJSONLWriter:
         writer.shutdown()
 
         # Read file and verify
-        with open(log_path, 'r') as f:
+        with open(log_path, "r") as f:
             lines = f.readlines()
             assert len(lines) == 3
 
@@ -250,12 +249,12 @@ class TestThreadedJSONLWriter:
         writer = ThreadedJSONLWriter(log_path, use_compression=True)
         writer.start()
 
-        event = {'event_type': 'test', 'data': 'test data'}
+        event = {"event_type": "test", "data": "test data"}
         writer.write_event(event)
         writer.shutdown()
 
         # Read compressed file
-        with gzip.open(log_path, 'rt', encoding='utf-8') as f:
+        with gzip.open(log_path, "rt", encoding="utf-8") as f:
             line = f.readline()
             parsed = json.loads(line)
             assert parsed == event
@@ -266,13 +265,13 @@ class TestThreadedJSONLWriter:
         writer = ThreadedJSONLWriter(log_path, use_compression=False)
 
         # Don't call start() explicitly
-        event = {'event_type': 'test', 'data': 'test data'}
+        event = {"event_type": "test", "data": "test data"}
         writer.write_event(event)
 
         writer.shutdown()
 
         # Verify event was written
-        with open(log_path, 'r') as f:
+        with open(log_path, "r") as f:
             line = f.readline()
             parsed = json.loads(line)
             assert parsed == event
@@ -282,15 +281,14 @@ class TestThreadedJSONLWriter:
 # Test Logging Functions
 # ============================================================================
 
+
 class TestLogAgentInvocation:
     """Test agent invocation logging."""
 
     def test_log_agent_invocation_basic(self, logger_session, temp_log_dir):
         """Test basic agent invocation logging."""
         event_id = log_agent_invocation(
-            agent="test-agent",
-            invoked_by="user",
-            reason="Test invocation"
+            agent="test-agent", invoked_by="user", reason="Test invocation"
         )
 
         assert event_id == "evt_001"
@@ -302,7 +300,7 @@ class TestLogAgentInvocation:
             invoked_by="orchestrator",
             reason="Test invocation",
             context={"tokens_before": 5000},
-            result={"status": "success"}
+            result={"status": "success"},
         )
 
         assert event_id.startswith("evt_")
@@ -310,11 +308,7 @@ class TestLogAgentInvocation:
     def test_validation_with_pydantic(self, logger_session, temp_log_dir):
         """Test that Pydantic validation works."""
         # This should succeed
-        event_id = log_agent_invocation(
-            agent="test-agent",
-            invoked_by="user",
-            reason="Valid event"
-        )
+        event_id = log_agent_invocation(agent="test-agent", invoked_by="user", reason="Valid event")
 
         assert event_id.startswith("evt_")
 
@@ -324,22 +318,14 @@ class TestLogToolUsage:
 
     def test_log_tool_usage_basic(self, logger_session):
         """Test basic tool usage logging."""
-        event_id = log_tool_usage(
-            agent="test-agent",
-            tool="Read",
-            operation="read_file"
-        )
+        event_id = log_tool_usage(agent="test-agent", tool="Read", operation="read_file")
 
         assert event_id.startswith("evt_")
 
     def test_log_tool_usage_with_duration(self, logger_session):
         """Test tool usage with duration."""
         event_id = log_tool_usage(
-            agent="test-agent",
-            tool="Write",
-            operation="create_file",
-            duration_ms=42,
-            success=True
+            agent="test-agent", tool="Write", operation="create_file", duration_ms=42, success=True
         )
 
         assert event_id.startswith("evt_")
@@ -351,7 +337,7 @@ class TestLogToolUsage:
             tool="Edit",
             operation="edit_file",
             success=False,
-            error_message="File not found"
+            error_message="File not found",
         )
 
         assert event_id.startswith("evt_")
@@ -367,7 +353,7 @@ class TestLogFileOperation:
             operation="create",
             file_path="src/test.py",
             file_size_bytes=1024,
-            language="python"
+            language="python",
         )
 
         assert event_id.startswith("evt_")
@@ -381,7 +367,7 @@ class TestLogFileOperation:
             lines_changed=10,
             diff="+added line\n-removed line",
             git_hash_before="abc123",
-            git_hash_after="def456"
+            git_hash_after="def456",
         )
 
         assert event_id.startswith("evt_")
@@ -397,7 +383,7 @@ class TestLogDecision:
             question="Which agent to use?",
             options=["agent1", "agent2"],
             selected="agent1",
-            rationale="Better fit for task"
+            rationale="Better fit for task",
         )
 
         assert event_id.startswith("evt_")
@@ -411,7 +397,7 @@ class TestLogDecision:
             selected="approach1",
             rationale="More efficient",
             confidence=0.95,
-            alternative_considered="approach2"
+            alternative_considered="approach2",
         )
 
         assert event_id.startswith("evt_")
@@ -426,7 +412,7 @@ class TestLogError:
             agent="test-agent",
             error_type="ValidationError",
             error_message="Invalid input",
-            context={"file": "test.py", "line": 42}
+            context={"file": "test.py", "line": 42},
         )
 
         assert event_id.startswith("evt_")
@@ -441,7 +427,7 @@ class TestLogError:
             severity="medium",
             attempted_fix="Switched to faster implementation",
             fix_successful=True,
-            recovery_time_ms=100
+            recovery_time_ms=100,
         )
 
         assert event_id.startswith("evt_")
@@ -457,7 +443,7 @@ class TestLogContextSnapshot:
             tokens_after=45000,
             tokens_consumed=5000,
             tokens_remaining=155000,
-            files_in_context=["file1.py", "file2.py"]
+            files_in_context=["file1.py", "file2.py"],
         )
 
         assert event_id.startswith("evt_")
@@ -471,7 +457,7 @@ class TestLogContextSnapshot:
             tokens_remaining=155000,
             files_in_context=["file1.py"],
             agent="orchestrator",
-            memory_mb=512.5
+            memory_mb=512.5,
         )
 
         assert event_id.startswith("evt_")
@@ -488,7 +474,7 @@ class TestLogValidation:
             validation_type="unit_test",
             checks={"test1": "pass", "test2": "pass"},
             result="pass",
-            metrics={"coverage": 100}
+            metrics={"coverage": 100},
         )
 
         assert event_id.startswith("evt_")
@@ -502,7 +488,7 @@ class TestLogValidation:
             checks={"latency": "fail", "memory": "pass"},
             result="fail",
             failures=["latency exceeded budget"],
-            warnings=["memory usage high"]
+            warnings=["memory usage high"],
         )
 
         assert event_id.startswith("evt_")
@@ -511,6 +497,7 @@ class TestLogValidation:
 # ============================================================================
 # Test Context Managers
 # ============================================================================
+
 
 class TestContextManagers:
     """Test context manager logging helpers."""
@@ -546,6 +533,7 @@ class TestContextManagers:
 # Test Performance
 # ============================================================================
 
+
 class TestPerformance:
     """Test performance characteristics (<1ms overhead target)."""
 
@@ -555,11 +543,7 @@ class TestPerformance:
 
         start_time = time.time()
         for i in range(iterations):
-            log_agent_invocation(
-                agent="test-agent",
-                invoked_by="user",
-                reason=f"Test {i}"
-            )
+            log_agent_invocation(agent="test-agent", invoked_by="user", reason=f"Test {i}")
         end_time = time.time()
 
         total_time_ms = (end_time - start_time) * 1000
@@ -574,11 +558,7 @@ class TestPerformance:
 
         start_time = time.time()
         for i in range(iterations):
-            log_tool_usage(
-                agent="test-agent",
-                tool="Read",
-                operation="read_file"
-            )
+            log_tool_usage(agent="test-agent", tool="Read", operation="read_file")
         end_time = time.time()
 
         total_time_ms = (end_time - start_time) * 1000
@@ -591,6 +571,7 @@ class TestPerformance:
 # ============================================================================
 # Test Integration
 # ============================================================================
+
 
 class TestIntegration:
     """Test end-to-end integration scenarios."""
@@ -606,14 +587,14 @@ class TestIntegration:
             question="Which agent?",
             options=["agent1", "agent2"],
             selected="agent1",
-            rationale="Better fit"
+            rationale="Better fit",
         )
         log_validation(
             agent="orchestrator",
             task="Setup",
             validation_type="config",
             checks={"valid": "pass"},
-            result="pass"
+            result="pass",
         )
 
         # Verify event count
@@ -640,6 +621,7 @@ class TestIntegration:
 # Test Error Handling
 # ============================================================================
 
+
 class TestErrorHandling:
     """Test error handling in activity logger."""
 
@@ -648,9 +630,7 @@ class TestErrorHandling:
         # Don't call initialize()
         # Logger should auto-initialize on first log
         event_id = log_agent_invocation(
-            agent="test-agent",
-            invoked_by="user",
-            reason="Auto-init test"
+            agent="test-agent", invoked_by="user", reason="Auto-init test"
         )
 
         assert event_id.startswith("evt_")
@@ -660,6 +640,7 @@ class TestErrorHandling:
 
     def test_disabled_logging(self, temp_log_dir, monkeypatch):
         """Test that logging can be disabled."""
+
         # Create a simple mock config object
         class MockConfig:
             def __init__(self):
@@ -670,17 +651,16 @@ class TestErrorHandling:
                 self.strict_mode = True
 
         from src.core import config
+
         test_config = MockConfig()
 
-        monkeypatch.setattr(config, 'get_config', lambda: test_config)
+        monkeypatch.setattr(config, "get_config", lambda: test_config)
 
         initialize()
 
         # Logging should not create files
         event_id = log_agent_invocation(
-            agent="test-agent",
-            invoked_by="user",
-            reason="Should not log"
+            agent="test-agent", invoked_by="user", reason="Should not log"
         )
 
         # Event ID still generated (counter still increments)
