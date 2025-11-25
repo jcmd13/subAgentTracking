@@ -1,0 +1,109 @@
+# Model Pricing Configuration for Cost Tracking
+# Links Back To: Main Plan → Phase 1 → Task 1.7
+
+models:
+  # Anthropic Claude Models
+  claude-opus-4:
+    input_price_per_1m: 15.00    # $15 per 1M input tokens
+    output_price_per_1m: 75.00   # $75 per 1M output tokens
+    context_window: 200000
+    tier: "strong"
+
+  claude-sonnet-4:
+    input_price_per_1m: 3.00     # $3 per 1M input tokens
+    output_price_per_1m: 15.00   # $15 per 1M output tokens
+    context_window: 200000
+    tier: "base"
+
+  claude-sonnet-4.5:
+    input_price_per_1m: 3.00
+    output_price_per_1m: 15.00
+    context_window: 200000
+    tier: "base"
+
+  claude-haiku-4:
+    input_price_per_1m: 0.25     # $0.25 per 1M input tokens
+    output_price_per_1m: 1.25    # $1.25 per 1M output tokens
+    context_window: 200000
+    tier: "weak"
+
+  # Google Gemini Models (FREE tier)
+  gemini-2.5-pro:
+    input_price_per_1m: 0.00     # Free tier
+    output_price_per_1m: 0.00
+    context_window: 1000000
+    tier: "base"
+    free_tier_limit_per_day: 1500  # requests per day
+
+  gemini-2.5-flash:
+    input_price_per_1m: 0.00     # Free tier
+    output_price_per_1m: 0.00
+    context_window: 1000000
+    tier: "weak"
+    free_tier_limit_per_day: 1500
+
+  # Ollama Models (local, FREE)
+  "gpt-oss:120b-cloud":
+    input_price_per_1m: 0.00     # Free (cloud-hosted Ollama)
+    output_price_per_1m: 0.00
+    context_window: 128000
+    tier: "weak"
+
+  "deepseek-v3.1:671b-cloud":
+    input_price_per_1m: 0.00     # Free (cloud-hosted Ollama)
+    output_price_per_1m: 0.00
+    context_window: 128000
+    tier: "base"
+
+  "mistral:latest":
+    input_price_per_1m: 0.00     # Free (local Ollama)
+    output_price_per_1m: 0.00
+    context_window: 32000
+    tier: "weak"
+
+  "phi3.5:3.8b":
+    input_price_per_1m: 0.00     # Free (local Ollama)
+    output_price_per_1m: 0.00
+    context_window: 128000
+    tier: "weak"
+
+# Budget Configuration
+budgets:
+  hourly_limit: 2.00      # $2/hour
+  daily_limit: 10.00      # $10/day
+  weekly_limit: 50.00     # $50/week
+  monthly_limit: 200.00   # $200/month
+
+  # Alert thresholds (percentage of budget)
+  alert_thresholds:
+    - 50   # Alert at 50% of budget
+    - 70   # Alert at 70%
+    - 90   # Alert at 90%
+
+  # Auto-actions at budget limits
+  auto_actions:
+    at_90_percent:
+      - "create_snapshot"
+      - "notify_user"
+    at_100_percent:
+      - "force_handoff"
+      - "block_expensive_models"  # Switch to free tier only
+
+# Cost Optimization Rules
+optimization:
+  prefer_free_tier: true   # Prefer Gemini/Ollama over paid models
+  quality_threshold: 18    # Minimum quality score (1-25) for Ollama
+
+  # Auto-downgrade rules (use cheaper model when possible)
+  auto_downgrade:
+    enabled: true
+    rules:
+      - condition: "context_tokens < 10000"
+        from_tier: "base"
+        to_tier: "weak"
+        reason: "Small context - use Haiku instead of Sonnet"
+
+      - condition: "task_type == 'log_analysis'"
+        from_tier: "base"
+        to_tier: "weak"
+        reason: "Simple task - use cheaper model"
