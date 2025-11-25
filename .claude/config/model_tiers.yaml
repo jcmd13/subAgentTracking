@@ -1,0 +1,200 @@
+# Model Tier Definitions for Intelligent Routing
+# Links Back To: Main Plan → Phase 2 → Task 2.1
+#
+# Three-Tier Strategy:
+# - Weak: Fast, cheap models for simple/repetitive tasks
+# - Base: Balanced models for standard development
+# - Strong: Premium models for complex/strategic tasks
+
+tiers:
+  weak:
+    description: "Fast, cheap models for simple/repetitive tasks"
+
+    use_cases:
+      - "Log summarization and analysis"
+      - "File scanning (scout phase)"
+      - "Syntax checking and validation"
+      - "Data extraction from structured text"
+      - "Simple code generation (boilerplate)"
+      - "Documentation formatting"
+
+    models:
+      - name: "claude-haiku-4"
+        priority: 1          # Try first (proven reliable)
+        cost_multiplier: 1.0
+        provider: "anthropic"
+        context_window: 200000
+
+      - name: "gpt-oss:120b-cloud"
+        priority: 2          # Try second (free, good quality)
+        cost_multiplier: 0.0 # Free
+        provider: "ollama"
+        context_window: 128000
+
+      - name: "gemini-2.5-flash"
+        priority: 3          # Fallback (free, fast)
+        cost_multiplier: 0.0 # Free
+        provider: "google"
+        context_window: 1000000
+
+    constraints:
+      max_context_window: 50000   # Don't use for large contexts
+      max_task_complexity: 3      # Score 1-10 (see complexity scorer)
+      min_quality_score: 15       # Out of 25 (for Ollama validation)
+
+  base:
+    description: "Balanced models for standard development tasks"
+
+    use_cases:
+      - "Code implementation and refactoring"
+      - "Bug fixing and debugging"
+      - "Planning phase (Scout-Plan-Build)"
+      - "API integration"
+      - "Test writing"
+      - "Code review and analysis"
+
+    models:
+      - name: "claude-sonnet-4"
+        priority: 1
+        cost_multiplier: 1.0
+        provider: "anthropic"
+        context_window: 200000
+
+      - name: "claude-sonnet-4.5"
+        priority: 2
+        cost_multiplier: 1.0
+        provider: "anthropic"
+        context_window: 200000
+
+      - name: "gemini-2.5-pro"
+        priority: 3          # Free alternative
+        cost_multiplier: 0.0
+        provider: "google"
+        context_window: 1000000
+
+      - name: "deepseek-v3.1:671b-cloud"
+        priority: 4          # Experimental free option
+        cost_multiplier: 0.0
+        provider: "ollama"
+        context_window: 128000
+
+    constraints:
+      max_context_window: 200000
+      max_task_complexity: 7
+      min_quality_score: 18      # Higher bar for base tier
+
+  strong:
+    description: "Premium models for complex/strategic tasks"
+
+    use_cases:
+      - "Architecture design and system planning"
+      - "Complex debugging (multi-file, race conditions)"
+      - "Strategic decisions (technology selection)"
+      - "Security reviews and audits"
+      - "Performance optimization"
+      - "Critical bug fixes in production"
+
+    models:
+      - name: "claude-opus-4"
+        priority: 1
+        cost_multiplier: 1.0
+        provider: "anthropic"
+        context_window: 200000
+
+      - name: "gpt-5-pro"
+        priority: 2          # Only if Opus unavailable
+        cost_multiplier: 5.0 # Expensive
+        provider: "openai"
+        context_window: 128000
+
+    constraints:
+      max_context_window: 200000
+      max_task_complexity: 10    # No upper limit
+      min_quality_score: 20      # Highest quality required
+
+# Routing Rules
+routing:
+  default_tier: "base"                 # Default to balanced tier
+
+  # Automatic tier upgrades
+  upgrade_on_failure: true             # If weak fails, try base
+  upgrade_on_complexity: true          # If complexity > tier max, upgrade
+  max_upgrade_attempts: 2              # Don't upgrade indefinitely
+
+  # Cost optimization
+  prefer_free_tier: true               # Prefer Gemini/Ollama when quality acceptable
+  free_tier_first: true                # Try free models before paid
+  quality_threshold: 18                # Min quality score (1-25) for free tier
+
+  # Fallback strategy
+  fallback_on_quota: true              # If API quota exceeded, try next model
+  fallback_on_error: true              # If model errors, try next
+
+  # Special cases
+  force_strong_for:
+    - "security_audit"
+    - "production_bug"
+    - "architecture_decision"
+    - "performance_critical"
+
+# Quality Validation (for Ollama/free tier)
+quality_validation:
+  enabled: true
+
+  # 5-point scoring system (1-5 each, 25 total)
+  criteria:
+    - name: "correctness"
+      weight: 1.0
+      description: "Factually accurate and logically sound"
+
+    - name: "completeness"
+      weight: 1.0
+      description: "All aspects of task addressed"
+
+    - name: "specificity"
+      weight: 1.0
+      description: "Concrete details vs vague statements"
+
+    - name: "context_awareness"
+      weight: 1.0
+      description: "Understands project context and constraints"
+
+    - name: "actionability"
+      weight: 1.0
+      description: "Clear next steps, implementable"
+
+  # Scoring thresholds
+  thresholds:
+    excellent: 20      # 20-25: Use as-is
+    good: 18           # 18-19: Use with minor validation
+    acceptable: 15     # 15-17: Refine with better model
+    poor: 0            # <15: Discard, use paid tier
+
+# Model-Specific Settings
+model_settings:
+  # Ollama models need quality validation
+  "gpt-oss:120b-cloud":
+    requires_validation: true
+    validation_prompt: "Rate the quality of this analysis on correctness, completeness, specificity, context awareness, and actionability (1-5 each)"
+
+  "deepseek-v3.1:671b-cloud":
+    requires_validation: true
+    validation_prompt: "Evaluate this response for production readiness"
+
+  # Gemini has proven reliability
+  "gemini-2.5-pro":
+    requires_validation: false  # Proven reliable
+    trusted: true
+
+  "gemini-2.5-flash":
+    requires_validation: false
+    trusted: true
+
+# Cost Savings Targets
+cost_targets:
+  weak_vs_base_savings: 0.92       # Haiku is 92% cheaper than Sonnet
+  base_vs_strong_savings: 0.80     # Sonnet is 80% cheaper than Opus
+  free_vs_weak_savings: 1.00       # Free models are 100% savings
+
+  # Overall target: 40-60% cost reduction via smart routing
+  overall_target_reduction: 0.50   # 50% average reduction

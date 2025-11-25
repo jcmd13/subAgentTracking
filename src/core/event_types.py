@@ -49,6 +49,10 @@ COST_TRACKED = "cost.tracked"
 COST_BUDGET_WARNING = "cost.budget_warning"
 COST_OPTIMIZATION_OPPORTUNITY = "cost.optimization_opportunity"
 
+# Workflow Events (2 types) - Added in Phase 2
+WORKFLOW_STARTED = "workflow.started"
+WORKFLOW_COMPLETED = "workflow.completed"
+
 # All event types (for iteration)
 ALL_EVENT_TYPES = [
     # Agent events
@@ -60,7 +64,9 @@ ALL_EVENT_TYPES = [
     # Session events
     SESSION_STARTED, SESSION_TOKEN_WARNING, SESSION_HANDOFF_REQUIRED, SESSION_ENDED,
     # Cost events
-    COST_TRACKED, COST_BUDGET_WARNING, COST_OPTIMIZATION_OPPORTUNITY
+    COST_TRACKED, COST_BUDGET_WARNING, COST_OPTIMIZATION_OPPORTUNITY,
+    # Workflow events
+    WORKFLOW_STARTED, WORKFLOW_COMPLETED
 ]
 
 # ============================================================================
@@ -770,6 +776,50 @@ COST_OPTIMIZATION_OPPORTUNITY_SCHEMA = {
     "additionalProperties": True
 }
 
+# Schema for WORKFLOW_STARTED
+WORKFLOW_STARTED_SCHEMA = {
+    "type": "object",
+    "required": ["workflow_id", "task_count"],
+    "properties": {
+        "workflow_id": {
+            "type": "string",
+            "description": "Unique workflow identifier"
+        },
+        "task_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of tasks in workflow"
+        },
+        "metadata": {
+            "type": "object",
+            "description": "Workflow metadata (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for WORKFLOW_COMPLETED
+WORKFLOW_COMPLETED_SCHEMA = {
+    "type": "object",
+    "required": ["workflow_id", "task_count"],
+    "properties": {
+        "workflow_id": {
+            "type": "string",
+            "description": "Unique workflow identifier"
+        },
+        "task_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of tasks in workflow"
+        },
+        "metadata": {
+            "type": "object",
+            "description": "Workflow metadata (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
 # ============================================================================
 # Schema Registry (maps event type to schema)
 # ============================================================================
@@ -803,7 +853,11 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     # Cost events
     COST_TRACKED: COST_TRACKED_SCHEMA,
     COST_BUDGET_WARNING: COST_BUDGET_WARNING_SCHEMA,
-    COST_OPTIMIZATION_OPPORTUNITY: COST_OPTIMIZATION_OPPORTUNITY_SCHEMA
+    COST_OPTIMIZATION_OPPORTUNITY: COST_OPTIMIZATION_OPPORTUNITY_SCHEMA,
+
+    # Workflow events
+    WORKFLOW_STARTED: WORKFLOW_STARTED_SCHEMA,
+    WORKFLOW_COMPLETED: WORKFLOW_COMPLETED_SCHEMA
 }
 
 # ============================================================================
