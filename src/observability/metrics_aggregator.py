@@ -123,7 +123,7 @@ class MetricsAggregator(EventHandler):
         self,
         window_sizes: Optional[List[int]] = None,
         max_records: int = 10000,
-        auto_subscribe: bool = True
+        auto_subscribe: bool = False
     ):
         """
         Initialize metrics aggregator.
@@ -131,7 +131,7 @@ class MetricsAggregator(EventHandler):
         Args:
             window_sizes: Time windows to maintain (default: 1m, 5m, 15m)
             max_records: Maximum records per window (memory limit)
-            auto_subscribe: Auto-subscribe to event bus
+            auto_subscribe: Auto-subscribe to event bus (False by default due to async/sync compatibility)
         """
         if window_sizes is None:
             window_sizes = [

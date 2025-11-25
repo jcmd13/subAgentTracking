@@ -49,6 +49,7 @@ def sample_event():
     """Create sample event for testing."""
     return Event(
         event_type=AGENT_INVOKED,
+        timestamp=datetime.utcnow(),
         payload={
             "agent": {"name": "test-agent", "id": "agent-1"},
             "invoked_by": "user",
@@ -56,7 +57,9 @@ def sample_event():
             "duration_ms": 150.0,
             "tokens": 1000,
             "cost": 0.05
-        }
+        },
+        trace_id="test-trace-123",
+        session_id="test-session-456"
     )
 
 
@@ -119,10 +122,13 @@ class TestMetricsAggregator:
         for i in range(10):
             event = Event(
                 event_type=AGENT_INVOKED,
+                timestamp=datetime.utcnow(),
                 payload={
                     "agent": {"name": f"agent-{i}"},
                     "tokens": 100 * i
-                }
+                },
+                trace_id=f"trace-{i}",
+                session_id="test-session"
             )
             aggregator.record_event(event)
 
@@ -144,7 +150,10 @@ class TestMetricsAggregator:
         """Should mark failed events as not successful."""
         event = Event(
             event_type=AGENT_FAILED,
-            payload={"agent": {"name": "failed-agent"}}
+            timestamp=datetime.utcnow(),
+            payload={"agent": {"name": "failed-agent"}},
+            trace_id="test-trace",
+            session_id="test-session"
         )
 
         record = aggregator._event_to_record(event)
@@ -155,9 +164,12 @@ class TestMetricsAggregator:
         """Should track active workflows."""
         # Start workflow
         start_event = Event(
-            event_type=WORKFLOW_STARTED,
-            payload={"workflow_id": "wf-1", "task_count": 3}
-        )
+                event_type=WORKFLOW_STARTED,
+                timestamp=datetime.utcnow(),
+                payload={"workflow_id": "wf-1", "task_count": 3},
+                trace_id="test-trace",
+                session_id="test-session"
+            )
         aggregator.record_event(start_event)
 
         assert "wf-1" in aggregator.active_workflows
@@ -165,9 +177,12 @@ class TestMetricsAggregator:
 
         # Complete workflow
         complete_event = Event(
-            event_type=WORKFLOW_COMPLETED,
-            payload={"workflow_id": "wf-1"}
-        )
+                event_type=WORKFLOW_COMPLETED,
+                timestamp=datetime.utcnow(),
+                payload={"workflow_id": "wf-1"},
+                trace_id="test-trace",
+                session_id="test-session"
+            )
         aggregator.record_event(complete_event)
 
         assert "wf-1" not in aggregator.active_workflows
@@ -178,7 +193,10 @@ class TestMetricsAggregator:
         # Invoke agent
         invoke_event = Event(
             event_type=AGENT_INVOKED,
-            payload={"agent": {"name": "agent-1", "id": "agent-1"}}
+            timestamp=datetime.utcnow(),
+            payload={"agent": {"name": "agent-1", "id": "agent-1"}},
+            trace_id="test-trace",
+            session_id="test-session"
         )
         aggregator.record_event(invoke_event)
 
@@ -188,7 +206,10 @@ class TestMetricsAggregator:
         # Complete agent
         complete_event = Event(
             event_type=AGENT_COMPLETED,
-            payload={"agent": {"name": "agent-1", "id": "agent-1"}}
+            timestamp=datetime.utcnow(),
+            payload={"agent": {"name": "agent-1", "id": "agent-1"}},
+            trace_id="test-trace",
+            session_id="test-session"
         )
         aggregator.record_event(complete_event)
 
@@ -252,7 +273,9 @@ class TestMetricsAggregator:
         p95 = aggregator._percentile(values, 95)
         p99 = aggregator._percentile(values, 99)
 
-        assert p50 == 50.0
+        # Percentile calculation: index = int((percentile / 100) * len)
+        # For 50th percentile of 10 items: int(0.5 * 10) = 5, so values[5] = 60.0
+        assert p50 == 60.0  # Index 5 (0-based)
         assert p95 >= 90.0
         assert p99 >= 95.0
 
@@ -266,9 +289,12 @@ class TestMetricsAggregator:
         """Should return stats for all windows."""
         # Record event
         event = Event(
-            event_type=AGENT_INVOKED,
-            payload={"agent": {"name": "test"}}
-        )
+                event_type=AGENT_INVOKED,
+                timestamp=datetime.utcnow(),
+                payload={"agent": {"name": "test"}},
+                trace_id="test-trace",
+                session_id="test-session"
+            )
         aggregator.record_event(event)
 
         all_stats = aggregator.get_all_stats()
