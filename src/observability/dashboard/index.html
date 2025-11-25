@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SubAgent Tracking - Real-Time Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <h1>SubAgent Tracking Dashboard</h1>
+                <div class="connection-status">
+                    <span class="status-indicator" id="statusIndicator"></span>
+                    <span id="connectionStatus">Disconnected</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="pauseBtn" class="btn btn-secondary" disabled>
+                    <span id="pauseIcon">⏸️</span> Pause
+                </button>
+                <button id="clearBtn" class="btn btn-secondary">🗑️ Clear</button>
+                <button id="settingsBtn" class="btn btn-secondary">⚙️ Settings</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <!-- Left Panel: Live Metrics -->
+            <section class="panel panel-left">
+                <div class="panel-header">
+                    <h2>Live Metrics</h2>
+                    <select id="windowSelect" class="select-small">
+                        <option value="60">1 Minute</option>
+                        <option value="300" selected>5 Minutes</option>
+                        <option value="900">15 Minutes</option>
+                    </select>
+                </div>
+
+                <!-- Key Metrics Cards -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Events/sec</div>
+                        <div class="metric-value" id="eventsPerSec">0.0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Active Agents</div>
+                        <div class="metric-value" id="activeAgents">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Agents/min</div>
+                        <div class="metric-value" id="agentsPerMin">0.0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Active Workflows</div>
+                        <div class="metric-value" id="activeWorkflows">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Tokens</div>
+                        <div class="metric-value" id="totalTokens">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Cost</div>
+                        <div class="metric-value" id="totalCost">$0.00</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Avg Duration (ms)</div>
+                        <div class="metric-value" id="avgDuration">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">P95 Duration (ms)</div>
+                        <div class="metric-value" id="p95Duration">0</div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="chart-container">
+                    <h3>Event Rate (last 60s)</h3>
+                    <canvas id="eventRateChart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Event Types Distribution</h3>
+                    <canvas id="eventTypeChart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Agent Performance (p50/p95/p99 duration)</h3>
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Right Panel: Live Event Stream -->
+            <section class="panel panel-right">
+                <div class="panel-header">
+                    <h2>Live Event Stream</h2>
+                    <div class="filter-controls">
+                        <select id="eventTypeFilter" class="select-small">
+                            <option value="">All Events</option>
+                            <option value="agent.invoked">Agent Invoked</option>
+                            <option value="agent.completed">Agent Completed</option>
+                            <option value="agent.failed">Agent Failed</option>
+                            <option value="tool.used">Tool Used</option>
+                            <option value="workflow.started">Workflow Started</option>
+                            <option value="workflow.completed">Workflow Completed</option>
+                        </select>
+                        <input type="text" id="agentFilter" placeholder="Filter by agent..." class="input-small">
+                    </div>
+                </div>
+
+                <!-- Event Stream -->
+                <div class="event-stream" id="eventStream">
+                    <div class="event-stream-empty">
+                        <p>Waiting for events...</p>
+                        <p class="text-muted">Connect to WebSocket server to see live events</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Panel: Workflow Visualization -->
+        <section class="panel panel-bottom">
+            <div class="panel-header">
+                <h2>Active Workflows</h2>
+                <div class="workflow-stats">
+                    <span id="workflowCount">0 workflows</span>
+                </div>
+            </div>
+            <div class="workflow-container" id="workflowContainer">
+                <div class="workflow-empty">
+                    <p>No active workflows</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="modal-close" id="closeSettings">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label for="wsHost">WebSocket Host:</label>
+                    <input type="text" id="wsHost" value="localhost" class="input-full">
+                </div>
+                <div class="setting-group">
+                    <label for="wsPort">WebSocket Port:</label>
+                    <input type="number" id="wsPort" value="8765" class="input-full">
+                </div>
+                <div class="setting-group">
+                    <label for="reconnectDelay">Reconnect Delay (ms):</label>
+                    <input type="number" id="reconnectDelay" value="3000" class="input-full">
+                </div>
+                <div class="setting-group">
+                    <label for="maxEvents">Max Events in Stream:</label>
+                    <input type="number" id="maxEvents" value="100" class="input-full">
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="autoReconnect" checked>
+                        Auto-reconnect on disconnect
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="showTimestamps" checked>
+                        Show timestamps in event stream
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveSettings" class="btn btn-primary">Save & Reconnect</button>
+                <button id="cancelSettings" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Status Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Main Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>

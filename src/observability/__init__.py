@@ -4,7 +4,7 @@ Observability Platform - Real-Time Monitoring and Analytics
 This module provides the unified API for the observability platform,
 including real-time event streaming, metrics aggregation, and analytics.
 
-Links Back To: Main Plan ’ Phase 3 (Observability Platform)
+Links Back To: Main Plan ï¿½ Phase 3 (Observability Platform)
 
 Usage:
     >>> from src.observability import initialize_observability, get_observability_stats
@@ -52,6 +52,14 @@ from src.observability.metrics_aggregator import (
     shutdown_metrics_aggregator
 )
 
+# Dashboard server
+from src.observability.dashboard_server import (
+    DashboardServer,
+    start_dashboard_server,
+    get_dashboard_server,
+    stop_dashboard_server
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,6 +79,12 @@ __all__ = [
     'initialize_metrics_aggregator',
     'get_metrics_aggregator',
     'shutdown_metrics_aggregator',
+
+    # Dashboard server
+    'DashboardServer',
+    'start_dashboard_server',
+    'get_dashboard_server',
+    'stop_dashboard_server',
 
     # Unified API
     'initialize_observability',
@@ -93,6 +107,10 @@ def initialize_observability(
     window_sizes: Optional[list] = None,
     max_records: int = 10000,
 
+    # Dashboard server config
+    dashboard_port: int = 8080,
+    start_dashboard: bool = False,
+
     # Control flags
     start_websocket: bool = False,  # Don't auto-start WebSocket (requires await)
     auto_subscribe: bool = True
@@ -104,6 +122,7 @@ def initialize_observability(
     It initializes:
     1. Real-time monitor (WebSocket server for event streaming)
     2. Metrics aggregator (Rolling window statistics)
+    3. Dashboard server (HTTP server for web UI)
 
     Args:
         websocket_host: WebSocket server host (default: "localhost")
@@ -111,6 +130,8 @@ def initialize_observability(
         max_connections: Maximum concurrent WebSocket connections (default: 100)
         window_sizes: Time windows for metrics (default: [60, 300, 900])
         max_records: Maximum records per window (default: 10000)
+        dashboard_port: Dashboard HTTP server port (default: 8080)
+        start_dashboard: Auto-start dashboard server (default: False)
         start_websocket: Auto-start WebSocket server (default: False, requires async)
         auto_subscribe: Auto-subscribe to event bus (default: True)
 
@@ -118,11 +139,15 @@ def initialize_observability(
         Dictionary with initialized components:
         {
             'monitor': RealtimeMonitor instance,
-            'aggregator': MetricsAggregator instance
+            'aggregator': MetricsAggregator instance,
+            'dashboard': DashboardServer instance (if start_dashboard=True)
         }
 
     Example:
-        >>> components = initialize_observability()
+        >>> # Initialize with dashboard
+        >>> components = initialize_observability(start_dashboard=True)
+        >>> # Dashboard: http://localhost:8080
+        >>>
         >>> # Start WebSocket server (async)
         >>> import asyncio
         >>> asyncio.run(components['monitor'].start())
@@ -160,10 +185,21 @@ def initialize_observability(
 
     logger.info("Observability platform initialization complete")
 
-    return {
+    # Initialize dashboard server (optional)
+    result = {
         'monitor': monitor,
         'aggregator': aggregator
     }
+
+    if start_dashboard:
+        dashboard = start_dashboard_server(
+            host=websocket_host,
+            port=dashboard_port
+        )
+        result['dashboard'] = dashboard
+        logger.info(f" Dashboard server started (http://{websocket_host}:{dashboard_port})")
+
+    return result
 
 
 def shutdown_observability() -> None:
