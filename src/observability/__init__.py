@@ -60,6 +60,27 @@ from src.observability.dashboard_server import (
     stop_dashboard_server
 )
 
+# Analytics and insights
+from src.observability.analytics_engine import (
+    AnalyticsEngine,
+    get_analytics_engine,
+    reset_analytics_engine
+)
+
+from src.observability.insight_engine import (
+    InsightEngine,
+    get_insight_engine,
+    reset_insight_engine
+)
+
+# Fleet monitoring
+from src.observability.fleet_monitor import (
+    FleetMonitor,
+    get_fleet_monitor,
+    initialize_fleet_monitor,
+    shutdown_fleet_monitor
+)
+
 logger = logging.getLogger(__name__)
 
 
