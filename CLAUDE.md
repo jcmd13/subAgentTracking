@@ -585,6 +585,9 @@ log_tool_usage(
 
 For comprehensive details, see:
 
+**Training Materials** (Separate Repository):
+- **[SubAgent Training Repository](https://github.com/jcmd13/subAgentTracking-training)** - Complete training program with tutorials, exercises, and hands-on projects
+
 **Core Tracking System**:
 - **`.claude/AGENT_TRACKING_SYSTEM.md`** (28k) - Complete technical specification
 - **`.claude/STORAGE_ARCHITECTURE.md`** (26k) - Storage strategy & capacity planning

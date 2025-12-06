@@ -73,6 +73,11 @@ site/
 *.log
 *.bak
 
+# Training materials (separate repo)
+**/tutorials/
+**/exercises/
+TRAINING.md
+
 # Keep directory structure
 !.claude/logs/.gitkeep
 !.claude/state/.gitkeep

@@ -141,7 +141,7 @@ A comprehensive tracking and observability system designed for **any Claude Code
 
 ```bash
 # 1. Clone this repository
-git clone https://github.com/yourusername/subAgentTracking.git
+git clone https://github.com/jcmd13/subAgentTracking.git
 cd subAgentTracking
 
 # 2. Install dependencies
@@ -178,6 +178,22 @@ cp src/core/* /path/to/your/project/src/core/
 # End-of-phase review
 "End Phase 1"
 ```
+
+---
+
+## 📚 Learning & Training
+
+**New to the SubAgent Tracking System?** Check out our comprehensive training program:
+
+👉 **[SubAgent Training Repository](https://github.com/jcmd13/subAgentTracking-training)**
+
+The training repo includes:
+- 7 tutorial modules (beginner-friendly)
+- 6 interactive exercises
+- Hands-on refactoring project
+- Complete support materials
+
+**This repository** contains the production implementation. The training repository teaches you how to use it.
 
 ---
 
