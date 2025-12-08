@@ -12,10 +12,32 @@ Usage:
 """
 
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
+
+import yaml
+
+
+def _default_data_dir() -> Path:
+    """
+    Choose a default data directory with backward compatibility.
+
+    Preference order:
+    1) Existing .subagent/ in CWD
+    2) Existing .claude/ in CWD
+    3) Create/use .subagent/ in CWD
+    """
+    cwd = Path.cwd()
+    subagent_dir = cwd / ".subagent"
+    claude_dir = cwd / ".claude"
+    if subagent_dir.exists():
+        return subagent_dir
+    if claude_dir.exists():
+        return claude_dir
+    return subagent_dir
 
 
 @dataclass
@@ -28,14 +50,14 @@ class Config:
 
     # Base paths
     project_root: Path = field(default_factory=lambda: Path.cwd())
-    claude_dir: Path = field(default_factory=lambda: Path.cwd() / ".claude")
+    claude_dir: Path = field(default_factory=_default_data_dir)  # Alias for data_dir (kept for legacy callers)
 
     # Tracking directories
-    logs_dir: Path = field(default_factory=lambda: Path.cwd() / ".claude" / "logs")
-    state_dir: Path = field(default_factory=lambda: Path.cwd() / ".claude" / "state")
-    analytics_dir: Path = field(default_factory=lambda: Path.cwd() / ".claude" / "analytics")
-    credentials_dir: Path = field(default_factory=lambda: Path.cwd() / ".claude" / "credentials")
-    handoffs_dir: Path = field(default_factory=lambda: Path.cwd() / ".claude" / "handoffs")
+    logs_dir: Path = field(default_factory=lambda: _default_data_dir() / "logs")
+    state_dir: Path = field(default_factory=lambda: _default_data_dir() / "state")
+    analytics_dir: Path = field(default_factory=lambda: _default_data_dir() / "analytics")
+    credentials_dir: Path = field(default_factory=lambda: _default_data_dir() / "credentials")
+    handoffs_dir: Path = field(default_factory=lambda: _default_data_dir() / "handoffs")
 
     # Activity log settings
     activity_log_enabled: bool = True
@@ -76,6 +98,7 @@ class Config:
     max_local_storage_mb: int = 20
     max_log_file_size_mb: int = 10
     max_snapshot_size_mb: int = 5
+    event_id_width: int = 3  # Base width for event IDs (auto-expands after 999)
 
     # Validation
     validate_event_schemas: bool = True
@@ -83,7 +106,9 @@ class Config:
 
     def __post_init__(self):
         """Load configuration from environment variables if available."""
+        self._update_tracking_dirs()
         self._load_from_env()
+        self._maybe_create_legacy_symlink()
         self._ensure_directories()
 
     def _load_from_env(self):
@@ -97,7 +122,10 @@ class Config:
             self._update_tracking_dirs()
         elif root_override:
             self.project_root = Path(root_override)
-            self.claude_dir = self.project_root / ".claude"
+            # Prefer .subagent under root; fall back to .claude for legacy installs
+            candidate_dir = self.project_root / ".subagent"
+            legacy_dir = self.project_root / ".claude"
+            self.claude_dir = candidate_dir if candidate_dir.exists() or not legacy_dir.exists() else legacy_dir
             self._update_tracking_dirs()
 
         # Snapshot triggers
@@ -123,12 +151,33 @@ class Config:
         if env_token_budget := os.getenv("SUBAGENT_TOKEN_BUDGET"):
             self.default_token_budget = int(env_token_budget)
 
+    def _maybe_create_legacy_symlink(self) -> None:
+        """
+        Create a .subagent -> .claude symlink when migrating legacy installs.
+
+        Controlled by SUBAGENT_MIGRATE_LEGACY=1 to avoid surprises.
+        """
+        migrate = os.getenv("SUBAGENT_MIGRATE_LEGACY")
+        candidate_dir = self.project_root / ".subagent"
+        legacy_dir = self.project_root / ".claude"
+
+        if not migrate or candidate_dir.exists() or not legacy_dir.exists():
+            return
+
+        try:
+            candidate_dir.symlink_to(legacy_dir, target_is_directory=True)
+            logging.info("Created .subagent symlink to legacy .claude (SUBAGENT_MIGRATE_LEGACY=1)")
+            self.claude_dir = candidate_dir
+            self._update_tracking_dirs()
+        except Exception as e:
+            logging.warning("Failed to create .subagent symlink to legacy .claude: %s", e, exc_info=True)
+
         # Strict mode
         if env_strict := os.getenv("SUBAGENT_STRICT_MODE"):
             self.strict_mode = env_strict.lower() in ("true", "1", "yes")
 
     def _update_tracking_dirs(self):
-        """Update all tracking directories based on claude_dir."""
+        """Update all tracking directories based on claude_dir (data_dir)."""
         self.logs_dir = self.claude_dir / "logs"
         self.state_dir = self.claude_dir / "state"
         self.analytics_dir = self.claude_dir / "analytics"
@@ -336,6 +385,13 @@ def get_config(reload: bool = False) -> Config:
 
     if _config is None or reload:
         _config = Config()
+
+        # Warn when falling back to legacy .claude/ data dir without explicit override
+        if _config.claude_dir.name == ".claude" and not os.getenv("SUBAGENT_DATA_DIR"):
+            print(
+                "⚠️  Using legacy .claude/ directory. Set SUBAGENT_DATA_DIR or create .subagent/ to migrate.",
+                file=sys.stderr,
+            )
 
         # Validate configuration
         is_valid, errors = _config.validate()

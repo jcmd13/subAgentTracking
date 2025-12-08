@@ -106,7 +106,7 @@ Assessment: 70% foundation complete, 0% user-facing features complete
 | 0.0.1 | Audit and map all `.claude` references across code/tests/docs | 1h | ✅ |
 | 0.0.2 | Update config defaults/env to prefer `.subagent` (with opt-in shim for `.claude`) | 2h | ✅ |
 | 0.0.3 | Migrate docs/guides/scripts (`setup_google_drive.py`, examples) to `.subagent` | 2h | ✅ |
-| 0.0.4 | Add migration/back-compat layer (auto-detect `.claude`, warn, optional symlink/copy) | 2h | ⬜ |
+| 0.0.4 | Add migration/back-compat layer (auto-detect `.claude`, warn, optional symlink/copy) | 2h | ✅ (env `SUBAGENT_MIGRATE_LEGACY=1` creates .subagent symlink to legacy .claude) |
 | 0.0.5 | Update tests/fixtures to new paths; keep adapters for legacy paths | 2h | ⬜ |
 
 **Exit Criteria:**

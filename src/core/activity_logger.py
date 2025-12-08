@@ -59,6 +59,7 @@ from src.core.schemas import (
     serialize_event,
     validate_event,
 )
+from src.core.exceptions import LogWriteError, ValidationError
 
 
 # ============================================================================
@@ -82,7 +83,12 @@ class EventCounter:
         """
         with self._lock:
             self._counter += 1
-            width = getattr(config.get_config(), "event_id_width", 3)
+            cfg_width = getattr(config.get_config(), "event_id_width", 3)
+            # Use wider width after 999 events to avoid rollover collisions
+            if self._counter < 1000:
+                width = cfg_width
+            else:
+                width = max(cfg_width, 6, len(str(self._counter)))
             return f"evt_{self._counter:0{width}d}"
 
     def get_count(self) -> int:
@@ -211,10 +217,7 @@ class ThreadedJSONLWriter:
                     # No event available, continue loop
                     continue
                 except Exception as e:
-                    # Log error but keep running
-                    import sys
-
-                    print(f"Error writing event: {e}", file=sys.stderr)
+                    logger.error("Error writing event to log: %s", e, exc_info=True)
         finally:
             # Flush any remaining events
             while not self.event_queue.empty():
@@ -225,8 +228,8 @@ class ThreadedJSONLWriter:
                         file_handle.write(json_line + "\n")
                 except queue.Empty:
                     break
-                except Exception:
-                    break
+                except Exception as e:
+                    logger.error("Error flushing event during shutdown: %s", e, exc_info=True)
 
             file_handle.close()
 
@@ -245,9 +248,7 @@ class ThreadedJSONLWriter:
         if self.writer_thread and self.writer_thread.is_alive():
             self.writer_thread.join(timeout=5.0)
             if self.writer_thread.is_alive():
-                import sys
-
-                print("Warning: Writer thread shutdown timeout", file=sys.stderr)
+                logger.warning("Writer thread shutdown timeout")
 
 
 # ============================================================================
@@ -482,9 +483,7 @@ def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
         except Exception as e:
             error_msg = f"Failed to delete {file_path}: {str(e)}"
             errors.append(error_msg)
-            import sys
-
-            print(f"Warning: {error_msg}", file=sys.stderr)
+            logger.warning("Cleanup warning: %s", error_msg, exc_info=True)
 
     # Calculate files kept (current + kept previous sessions)
     files_kept = len(current_session_files) + len(files_to_keep)
@@ -568,11 +567,9 @@ def shutdown():
 
         backup_on_shutdown()
     except ImportError:
-        # Backup integration not available, continue with shutdown
-        pass
-    except Exception:
-        # Backup failed, but continue with shutdown
-        pass
+        logger.debug("Backup integration not available during activity logger shutdown")
+    except Exception as e:
+        logger.warning("Backup on shutdown failed; continuing shutdown: %s", e, exc_info=True)
 
     if _writer:
         _writer.shutdown()
@@ -606,7 +603,7 @@ def get_event_count() -> int:
 # ============================================================================
 
 
-def _write_event(event: dict, event_type: str) -> str:
+def _write_event(event: dict, event_type: str) -> Optional[str]:
     """
     Internal function to write event to log.
 
@@ -615,7 +612,7 @@ def _write_event(event: dict, event_type: str) -> str:
         event_type: Event type for validation
 
     Returns:
-        Event ID
+        Event ID if written, else None when discarded
     """
     # Auto-initialize if needed
     if not _initialized:
@@ -637,14 +634,16 @@ def _write_event(event: dict, event_type: str) -> str:
         except Exception as e:
             error_msg = f"Pydantic validation failed: {str(e)}"
             if cfg.strict_mode:
-                raise ValueError(error_msg)
+                raise ValidationError(error_msg)
             else:
-                import sys
-
-                print(f"Warning: {error_msg}", file=sys.stderr)
+                logger.warning("%s - Event discarded", error_msg, exc_info=True)
+                return None
 
     # Write event (non-blocking queue operation)
-    _writer.write_event(event)
+    try:
+        _writer.write_event(event)
+    except Exception as e:
+        raise LogWriteError(f"Failed to write event: {e}") from e
 
     return event["event_id"]
 
@@ -1148,51 +1147,34 @@ def log_context_snapshot(
     return _write_event(event, "context_snapshot")
 
 
-def _normalize_validation_status(status: str) -> str:
+def _normalize_validation_status(status: Any) -> ValidationStatus:
     """
-    Normalize validation status string to match ValidationStatus enum values.
+    Normalize validation status to ValidationStatus enum.
 
     Handles case-insensitive matching and common variations.
-
-    Args:
-        status: Input status string (e.g., "PASS", "Failed", "warn", etc.)
-
-    Returns:
-        Normalized status: "pass", "fail", "warning", or "skipped"
-
-    Examples:
-        >>> _normalize_validation_status("PASS")
-        'pass'
-        >>> _normalize_validation_status("Failed")
-        'fail'
-        >>> _normalize_validation_status("WARN")
-        'warning'
     """
+    if status is None:
+        return ValidationStatus.SKIPPED
+
+    if isinstance(status, bool):
+        return ValidationStatus.PASS if status else ValidationStatus.FAIL
+
     status_upper = str(status).upper().strip()
 
-    # Map to "pass"
     if status_upper in ("PASS", "PASSED", "SUCCESS", "SUCCESSFUL", "OK", "TRUE", "1", "YES"):
-        return "pass"
+        return ValidationStatus.PASS
 
-    # Map to "fail"
-    elif status_upper in ("FAIL", "FAILED", "FAILURE", "ERROR", "FALSE", "0", "NO"):
-        return "fail"
+    if status_upper in ("FAIL", "FAILED", "FAILURE", "ERROR", "FALSE", "0", "NO"):
+        return ValidationStatus.FAIL
 
-    # Map to "warning"
-    elif status_upper in ("WARN", "WARNING", "WARNINGS"):
-        return "warning"
+    if status_upper in ("WARN", "WARNING", "WARNINGS", "ALERT", "CAUTION"):
+        return ValidationStatus.WARNING
 
-    # Map to "skipped"
-    elif status_upper in ("SKIP", "SKIPPED", "SKIPPING", "NA", "N/A", "NONE", "UNKNOWN"):
-        return "skipped"
+    if status_upper in ("SKIP", "SKIPPED", "SKIPPING", "NA", "N/A", "NONE", "UNKNOWN"):
+        return ValidationStatus.SKIPPED
 
-    # If already lowercase valid value, return as-is
-    elif status.lower() in ("pass", "fail", "warning", "skipped"):
-        return status.lower()
-
-    # Default: treat unknown as skipped (safest option)
-    else:
-        return "skipped"
+    # Fallback: treat unknown as skipped
+    return ValidationStatus.SKIPPED
 
 
 def log_validation(

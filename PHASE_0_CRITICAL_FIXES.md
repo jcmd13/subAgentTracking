@@ -30,7 +30,7 @@ An independent deep inspection of the codebase revealed **18 issues** that must 
 
 **Goal:** Move the default data root to `.subagent/` (AI-agnostic) while preserving backward compatibility for existing `.claude/` installs. The CLI already uses `.subagent`; the rest of the codebase, tests, and docs must be aligned.
 
-**Current status:** Config now prefers `.subagent/` by default with a legacy `.claude/` fallback; config tests cover both. `.claude` reference audit complete (runtime + docs). Docs/guides/scripts now reference `.subagent/` with legacy notes; migration helper/back-compat ergonomics still pending.
+**Current status:** Config now prefers `.subagent/` by default with a legacy `.claude/` fallback; config tests cover both. `.claude` reference audit complete (runtime + docs). Docs/guides/scripts now reference `.subagent/` with legacy notes. Optional migration helper added: set `SUBAGENT_MIGRATE_LEGACY=1` to auto-create a `.subagent` symlink pointing to legacy `.claude/`.
 
 ### Tasks
 - **0.0.1 Audit:** Inventory all `.claude` references across code, tests, fixtures, and docs; classify which are runtime paths vs. documentation.
