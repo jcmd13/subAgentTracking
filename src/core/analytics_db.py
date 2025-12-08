@@ -36,6 +36,7 @@ Performance:
 
 import sqlite3
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime, timedelta
@@ -43,6 +44,7 @@ from contextlib import contextmanager
 
 from src.core.config import get_config
 
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Database Schema
@@ -224,6 +226,7 @@ class AnalyticsDB:
             conn.commit()
         except Exception as e:
             conn.rollback()
+            logger.error("Analytics DB transaction failed: %s", e, exc_info=True)
             raise
         finally:
             conn.close()
@@ -261,9 +264,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error initializing analytics database: {e}", file=sys.stderr)
+            logger.error("Error initializing analytics database: %s", e, exc_info=True)
             return False
 
     def insert_agent_performance(
@@ -321,9 +322,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting agent performance: {e}", file=sys.stderr)
+            logger.error("Error inserting agent performance: %s", e, exc_info=True)
             return False
 
     def insert_tool_usage(
@@ -380,12 +379,10 @@ class AnalyticsDB:
                         error_message,
                     ),
                 )
-            return True
+                return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting tool usage: {e}", file=sys.stderr)
+            logger.error("Error inserting tool usage: %s", e, exc_info=True)
             return False
 
     def insert_error_pattern(
@@ -449,9 +446,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting error pattern: {e}", file=sys.stderr)
+            logger.error("Error inserting error pattern: %s", e, exc_info=True)
             return False
 
     def insert_file_operation(
@@ -505,9 +500,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting file operation: {e}", file=sys.stderr)
+            logger.error("Error inserting file operation: %s", e, exc_info=True)
             return False
 
     def insert_decision(
@@ -561,9 +554,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting decision: {e}", file=sys.stderr)
+            logger.error("Error inserting decision: %s", e, exc_info=True)
             return False
 
     def insert_validation(
@@ -620,9 +611,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting validation: {e}", file=sys.stderr)
+            logger.error("Error inserting validation: %s", e, exc_info=True)
             return False
 
     def insert_session(
@@ -658,9 +647,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error inserting session: {e}", file=sys.stderr)
+            logger.error("Error inserting session: %s", e, exc_info=True)
             return False
 
     def update_session_end(self, session_id: str, ended_at: str, success: bool = True) -> bool:
@@ -689,9 +676,7 @@ class AnalyticsDB:
             return True
 
         except Exception as e:
-            import sys
-
-            print(f"Error updating session: {e}", file=sys.stderr)
+            logger.error("Error updating session: %s", e, exc_info=True)
             return False
 
     # ========================================================================
@@ -751,9 +736,7 @@ class AnalyticsDB:
                 return [dict(row) for row in rows]
 
         except Exception as e:
-            import sys
-
-            print(f"Error querying agent performance: {e}", file=sys.stderr)
+            logger.error("Error querying agent performance: %s", e, exc_info=True)
             return []
 
     def query_tool_usage(
@@ -803,9 +786,7 @@ class AnalyticsDB:
                 return [dict(row) for row in rows]
 
         except Exception as e:
-            import sys
-
-            print(f"Error querying tool usage: {e}", file=sys.stderr)
+            logger.error("Error querying tool usage: %s", e, exc_info=True)
             return []
 
     def query_error_patterns(
@@ -855,9 +836,7 @@ class AnalyticsDB:
                 return [dict(row) for row in rows]
 
         except Exception as e:
-            import sys
-
-            print(f"Error querying error patterns: {e}", file=sys.stderr)
+            logger.error("Error querying error patterns: %s", e, exc_info=True)
             return []
 
     def query_file_changes(
@@ -925,9 +904,7 @@ class AnalyticsDB:
                 return [dict(row) for row in rows]
 
         except Exception as e:
-            import sys
-
-            print(f"Error querying file changes: {e}", file=sys.stderr)
+            logger.error("Error querying file changes: %s", e, exc_info=True)
             return []
 
     def get_session_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -975,9 +952,7 @@ class AnalyticsDB:
                 }
 
         except Exception as e:
-            import sys
-
-            print(f"Error getting session summary: {e}", file=sys.stderr)
+            logger.error("Error getting session summary: %s", e, exc_info=True)
             return None
 
 
@@ -1138,7 +1113,7 @@ def ingest_activity_log(
         - Duplicate detection uses indexed queries
 
     Example:
-        >>> stats = ingest_activity_log('.claude/logs/session_current.jsonl')
+        >>> stats = ingest_activity_log('.subagent/logs/session_current.jsonl')  # legacy .claude/... also works
         >>> print(f"Inserted {stats['inserted']} events in {stats['duration_ms']}ms")
     """
     import gzip
@@ -1287,8 +1262,9 @@ def _is_duplicate_event(db: AnalyticsDB, event_id: str, session_id: str) -> bool
 
         return False
 
-    except Exception:
+    except Exception as e:
         # On error, assume not duplicate (safer to insert than skip)
+        logger.error("Failed to check duplicate event %s for session %s: %s", event_id, session_id, e, exc_info=True)
         return False
 
 

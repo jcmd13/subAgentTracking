@@ -2,7 +2,7 @@
 Hooks Manager - Event-Driven Automation System
 
 Enables pre/post hooks for event interception and automation.
-Hooks are Python scripts in `.claude/hooks/` that can execute custom logic
+Hooks are Python scripts in `.subagent/hooks/` that can execute custom logic (legacy `.claude/hooks/` still supported)
 before or after events.
 
 Links Back To: Main Plan → Phase 1 → Task 1.6
@@ -90,7 +90,7 @@ class HookContext:
             from src.core.snapshot_manager import take_snapshot
             return take_snapshot(trigger=trigger)
         except Exception as e:
-            self.logger.error(f"Failed to create snapshot: {e}")
+            self.logger.error("Failed to create snapshot from hook: %s", e, exc_info=True)
             return ""
 
     def send_notification(self, message: str, channel: str = "log"):
@@ -130,7 +130,7 @@ class HooksManager:
     """
     Manages hook discovery, registration, and execution.
 
-    Hooks are discovered from `.claude/hooks/` directory and executed
+    Hooks are discovered from `.subagent/hooks/` directory and executed (legacy `.claude/hooks/` supported)
     based on event type.
     """
 
@@ -139,7 +139,7 @@ class HooksManager:
         Initialize hooks manager.
 
         Args:
-            hooks_dir: Directory containing hook scripts (default: .claude/hooks)
+            hooks_dir: Directory containing hook scripts (default: .subagent/hooks/; legacy .claude/ supported)
         """
         config = get_config()
         self.hooks_dir = hooks_dir or (config.claude_dir / "hooks")
@@ -184,7 +184,7 @@ class HooksManager:
                         self.hooks_registry[hook_type].append(hook_module)
                         logger.info(f"Loaded hook: {hook_type}/{hook_file.name}")
                 except Exception as e:
-                    logger.error(f"Failed to load hook {hook_file}: {e}", exc_info=True)
+                    logger.error("Failed to load hook %s: %s", hook_file, e, exc_info=True)
 
         self._initialized = True
 
@@ -258,9 +258,9 @@ class HooksManager:
                     return HookResult.DENY
 
             except asyncio.TimeoutError:
-                logger.error(f"Hook {hook.hook_name} timed out (>1s)")
+                logger.error("Hook %s timed out (>1s)", hook.hook_name)
             except Exception as e:
-                logger.error(f"Hook {hook.hook_name} failed: {e}", exc_info=True)
+                logger.error("Hook %s failed: %s", hook.hook_name, e, exc_info=True)
 
         return HookResult.ALLOW
 
@@ -289,7 +289,7 @@ class HooksManager:
                 else:
                     return HookResult.ALLOW
             except Exception as e:
-                logger.error(f"Hook execution error: {e}", exc_info=True)
+                logger.error("Hook execution error in %s: %s", hook.hook_name, e, exc_info=True)
                 return HookResult.ALLOW
 
         result = await loop.run_in_executor(None, run_hook)
@@ -370,7 +370,7 @@ class HookEventSubscriber(EventHandler):
                 )
 
         except Exception as e:
-            logger.error(f"Error in hook event subscriber: {e}", exc_info=True)
+            logger.error("Error in hook event subscriber: %s", e, exc_info=True)
 
     def subscribe_to_events(self, event_bus=None) -> None:
         """
@@ -411,7 +411,7 @@ def initialize_hooks_manager(hooks_dir: Optional[Path] = None) -> HooksManager:
     Creates manager, discovers hooks, and connects to event bus.
 
     Args:
-        hooks_dir: Directory containing hooks (default: .claude/hooks)
+        hooks_dir: Directory containing hooks (default: .subagent/hooks/; legacy .claude/ supported)
 
     Returns:
         HooksManager instance

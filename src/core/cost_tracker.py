@@ -49,7 +49,7 @@ class CostTracker:
         Initialize cost tracker.
 
         Args:
-            pricing_config_path: Path to model_pricing.yaml (default: .claude/config/)
+            pricing_config_path: Path to model_pricing.yaml (default: .subagent/config/, legacy .claude/config/ supported)
         """
         config = get_config()
         self.pricing_config_path = pricing_config_path or (
@@ -88,7 +88,7 @@ class CostTracker:
                 pricing = yaml.safe_load(f)
                 return pricing or {"models": {}, "budgets": {}}
         except Exception as e:
-            logger.error(f"Failed to load pricing config: {e}")
+            logger.error("Failed to load pricing config: %s", e, exc_info=True)
             return {"models": {}, "budgets": {}}
 
     def calculate_cost(
@@ -404,7 +404,7 @@ class CostTrackerSubscriber(EventHandler):
                 await self._publish_budget_alert(event, alert)
 
         except Exception as e:
-            logger.error(f"Error in cost tracker subscriber: {e}", exc_info=True)
+            logger.error("Error in cost tracker subscriber: %s", e, exc_info=True)
 
     async def _publish_cost_event(self, original_event: Event, cost_details: Dict[str, Any]) -> None:
         """Publish COST_TRACKED event."""
@@ -454,7 +454,7 @@ def initialize_cost_tracker(pricing_config_path: Optional[Path] = None) -> CostT
     Initialize the global cost tracker.
 
     Args:
-        pricing_config_path: Path to pricing YAML (default: .claude/config/model_pricing.yaml)
+        pricing_config_path: Path to pricing YAML (default: .subagent/config/model_pricing.yaml; legacy .claude/ supported)
 
     Returns:
         CostTracker instance

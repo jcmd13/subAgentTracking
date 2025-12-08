@@ -26,6 +26,31 @@ An independent deep inspection of the codebase revealed **18 issues** that must 
 
 **This phase must complete before ANY new feature development.**
 
+## Phase 0A: Storage Directory Unification (.claude → .subagent)
+
+**Goal:** Move the default data root to `.subagent/` (AI-agnostic) while preserving backward compatibility for existing `.claude/` installs. The CLI already uses `.subagent`; the rest of the codebase, tests, and docs must be aligned.
+
+**Current status:** Config now prefers `.subagent/` by default with a legacy `.claude/` fallback; config tests cover both. `.claude` reference audit complete (runtime + docs). Docs/guides/scripts now reference `.subagent/` with legacy notes; migration helper/back-compat ergonomics still pending.
+
+### Tasks
+- **0.0.1 Audit:** Inventory all `.claude` references across code, tests, fixtures, and docs; classify which are runtime paths vs. documentation.
+- **0.0.2 Config default flip:** Make `.subagent/` the default in config/env; retain a compatibility shim that auto-detects `.claude/` and warns or redirects.
+- **0.0.3 Docs/scripts migration:** Update guides, examples, and setup scripts (e.g., `setup_google_drive.py`) to `.subagent/`; add migration notes for existing users.
+- **0.0.4 Back-compat layer:** Add a safe migration path (symlink or copy option) and runtime warning if `.claude/` is present so legacy installs keep working.
+- **0.0.5 Tests/fixtures:** Update tests and fixtures to `.subagent/`, keeping adapters for legacy paths where needed.
+
+### Acceptance Criteria
+- Default data root is `.subagent/` across config, CLI, and docs.
+- Legacy `.claude/` installs continue to run or provide a clear migration path.
+- Tests and smoke flows run against `.subagent/`.
+- Guides/examples reference `.subagent/` only.
+
+### Audit Findings (0.0.1)
+- Runtime/code hotspots: `src/orchestration/model_router.py`, `src/core/backup_integration.py`, `src/core/cost_tracker.py`, `src/core/hooks_manager.py`, `src/core/analytics_db.py` (docstring/example), plus legacy default names in `config.py` for back-compat.
+- Scripts: `setup_google_drive.py` migrated to `.subagent/` with legacy fallback.
+- Tests/fixtures: `tests/test_config.py` covers both data roots; remaining legacy reference in demo printouts removed.
+- Docs/guides/examples: Most migrated to `.subagent/` with legacy notes; primary remaining legacy-heavy doc is `CLAUDE.md` (needs path note-only update or conversion).
+
 ### 0.1 Critical Issues (System Non-Functional Without These)
 
 #### Task 0.1.1: Fix BackupManager Missing Methods
@@ -131,6 +156,7 @@ def backup_session(
 **Severity:** CRITICAL  
 **Location:** `src/core/snapshot_manager.py` lines 236, 248, 470, 526  
 **Impact:** Python 3.12+ incompatibility. Will break on newer Python versions.
+**Status:** ✅ Completed (no `utcnow` remaining; all timestamps use timezone-aware `datetime.now(timezone.utc)`)
 
 **Problem:**
 ```python
@@ -170,6 +196,7 @@ datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 **Severity:** CRITICAL  
 **Location:** `src/core/activity_logger.py` line 253  
 **Impact:** Race conditions under concurrent agent invocations. Data corruption possible.
+**Status:** ✅ Completed (ContextVars-based parent event stack)
 
 **Problem:**
 ```python
@@ -240,6 +267,7 @@ def _get_parent_stack() -> List[str]:
 **Severity:** HIGH  
 **Location:** Multiple locations in `src/core/activity_logger.py`  
 **Impact:** Operational blindspots - failures go unnoticed.
+**Status:** 🟠 In Progress (analytics DB, hooks manager, cost tracker, activity/analytics subscribers, snapshot handoff, backup integration, and counter persistence now log structured errors; remaining broad handlers in activity_logger/backup_manager still need tightening)
 
 **Problem Areas:**
 ```python
@@ -307,6 +335,7 @@ class ConfigurationError(SubAgentError):
 **Severity:** HIGH  
 **Location:** `src/core/snapshot_manager.py` line 272  
 **Impact:** Hardcoded value cannot be adjusted without code change.
+**Status:** ✅ Completed (token budgets now pulled from config/env; context snapshot events emit configured totals)
 
 **Problem:**
 ```python
@@ -329,9 +358,9 @@ default_token_budget: int = 200000
 ```
 
 **Acceptance Criteria:**
-- [ ] Token budget read from config
-- [ ] Can be overridden via environment variable
-- [ ] Default still works if not specified
+- [x] Token budget read from config
+- [x] Can be overridden via environment variable
+- [x] Default still works if not specified
 
 **Estimated Effort:** 30 minutes
 
@@ -341,6 +370,7 @@ default_token_budget: int = 200000
 **Severity:** HIGH  
 **Location:** `src/core/schemas.py:322` vs `src/core/activity_logger.py:1153`  
 **Impact:** Case sensitivity issues ("pass" vs "PASS") break validation.
+**Status:** ✅ Completed (validation normalization maps strings to ValidationStatus enums case-insensitively)
 
 **Problem:**
 ```python
@@ -380,10 +410,10 @@ def log_validation(
 ```
 
 **Acceptance Criteria:**
-- [ ] Any reasonable string input normalized to enum
-- [ ] Case-insensitive matching
-- [ ] Unknown values mapped to UNKNOWN status
-- [ ] Schema validation passes
+- [x] Any reasonable string input normalized to enum
+- [x] Case-insensitive matching
+- [x] Unknown values mapped to UNKNOWN status
+- [x] Schema validation passes
 
 **Estimated Effort:** 1 hour
 
@@ -393,6 +423,7 @@ def log_validation(
 **Severity:** HIGH  
 **Location:** `src/core/snapshot_manager.py` lines 243-249  
 **Impact:** Duration calculation wrong on non-UTC systems.
+**Status:** ✅ Completed (snapshot duration parsing uses UTC; session IDs and CLI timestamps emit timezone-aware values)
 
 **Problem:**
 ```python
@@ -434,6 +465,7 @@ if session_id.startswith("session_"):
 **Severity:** MEDIUM  
 **Location:** `src/core/activity_logger.py` lines 610-623  
 **Impact:** Invalid events written to log, break analytics later.
+**Status:** ✅ Completed (invalid events now dropped unless strict mode raises; warning emitted)
 
 **Problem:**
 ```python
@@ -480,6 +512,7 @@ if config.validate_event_schemas:
 **Severity:** MEDIUM  
 **Location:** `src/core/backup_manager.py` lines 59-60  
 **Impact:** Credential file corruption on crash.
+**Status:** ✅ Completed (credential/token writes now atomic via temp+rename)
 
 **Problem:**
 ```python
@@ -525,6 +558,7 @@ atomic_write(token_path, creds.to_json())
 **Severity:** MEDIUM  
 **Location:** `src/core/snapshot_manager.py` lines 301-305  
 **Impact:** Returns snapshot ID even when write failed.
+**Status:** ✅ Completed (retry with backoff; returns None only in strict_mode)
 
 **Problem:**
 ```python
@@ -573,6 +607,7 @@ raise SnapshotError(f"Failed to write snapshot {snapshot_id}")
 **Severity:** MEDIUM  
 **Location:** `src/core/activity_logger.py` line 84  
 **Impact:** At 1000 events, format breaks (`evt_1000` vs `evt_001`).
+**Status:** ✅ Completed (auto-expands width after 999; base width still 3)
 
 **Problem:**
 ```python
@@ -617,6 +652,7 @@ return f"evt_{session_id}_{self._counter}"
 **Severity:** DESIGN  
 **Location:** `src/core/snapshot_manager.py` line 44  
 **Impact:** Duplicate snapshot IDs on process restart.
+**Status:** ✅ Completed (snapshot counters persist to state/counters.json with atomic writes; reset clears persisted value)
 
 **Problem:**
 ```python
@@ -647,9 +683,9 @@ def _next_snapshot_id() -> str:
 ```
 
 **Acceptance Criteria:**
-- [ ] Counter persists across restarts
-- [ ] No duplicate IDs within a project
-- [ ] Counter file uses atomic writes
+- [x] Counter persists across restarts
+- [x] No duplicate IDs within a project
+- [x] Counter file uses atomic writes
 
 **Estimated Effort:** 2 hours
 
@@ -763,17 +799,18 @@ These issues should be tracked but don't block MVP:
 
 | Day | Task | Est. Hours |
 |-----|------|------------|
+| 0 | 0.0.x: `.claude` → `.subagent` audit, default flip, migration path | 6 |
 | 1 | 0.1.1: BackupManager missing methods | 4 |
-| 1 | 0.1.2: Fix datetime.utcnow() | 1 |
-| 2 | 0.1.3: Thread safety on global state | 3 |
+| 1 | 0.1.2: Fix datetime.utcnow() | 1 ✅ |
+| 2 | 0.1.3: Thread safety on global state | 3 ✅ |
 | 2 | 0.2.1: Exception hierarchy | 4 |
 | 3 | 0.2.2: Configurable token budget | 0.5 |
 | 3 | 0.2.3: ValidationEvent type mismatch | 1 |
-| 3 | 0.2.4: Session duration timezone bug | 1 |
-| 3 | 0.3.1: Schema validation bypass | 0.5 |
-| 4 | 0.3.2: Atomic file operations | 1 |
-| 4 | 0.3.3: Snapshot write retry | 1 |
-| 4 | 0.3.4: Event ID format | 0.25 |
+| 3 | 0.2.4: Session duration timezone bug | 1 ✅ |
+| 3 | 0.3.1: Schema validation bypass | 0.5 ✅ |
+| 4 | 0.3.2: Atomic file operations | 1 ✅ |
+| 4 | 0.3.3: Snapshot write retry | 1 ✅ |
+| 4 | 0.3.4: Event ID format | 0.25 ✅ |
 | 4 | 0.4.1: Persist snapshot counter | 2 |
 | 5 | 0.4.2: Refactor circular dependencies | 4 |
 | 5 | 0.4.3: Thread-safe shutdown | 0.5 |
@@ -906,6 +943,17 @@ print('Thread safety test passed')
 - Prefer compatibility helpers (Event defaults, tolerant logging APIs) so fixtures from different agents interoperate cleanly.
 - When sandboxed ports/files are blocked, switch components to no-op or skip mode rather than hard failing.
 - Log new incompatibilities in the Phase 0 table (0.3.x) before handing off to another agent.
+- Set `SUBAGENT_DATA_DIR` (CLI defaults to `.subagent/`) so all agents share the same state and logs instead of forking new directories mid-phase.
+- If multiple agents might start the realtime monitor, assign a port per agent and record it in `.subagent/config.yaml` to prevent collisions.
+- Record which Phase 0 task you're taking in the queue below before editing code to avoid duplicate fixes when orchestration is absent.
+
+### Phase 0 Work Queue (for handoff between uncoordinated agents)
+1. 🔜 0.0.x `.claude` → `.subagent` migration (audit, default flip, back-compat/migration path)
+2. ✅ 0.2.4 Session duration timezone bug (UTC parsing and timestamps)
+3. ✅ 0.3.1 Schema validation bypass (drop invalid events instead of writing)
+4. ⏭️ 0.3.2 Atomic credential writes
+5. ⏭️ 0.3.3 Snapshot write retry/backoff
+6. ⏭️ 0.3.4 Expand event ID width
 
 ---
 

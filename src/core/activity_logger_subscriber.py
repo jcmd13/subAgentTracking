@@ -90,7 +90,7 @@ class ActivityLoggerSubscriber(EventHandler):
 
         except Exception as e:
             self._error_count += 1
-            logger.error(f"Error logging event {event.event_type}: {e}", exc_info=True)
+            logger.error("Error logging event %s: %s", event.event_type, e, exc_info=True)
 
     def _event_to_jsonl(self, event: Event) -> dict:
         """
@@ -142,7 +142,7 @@ class ActivityLoggerSubscriber(EventHandler):
 
         except Exception as e:
             self._error_count += len(events_to_write)
-            logger.error(f"Error flushing buffer: {e}", exc_info=True)
+            logger.error("Error flushing buffer: %s", e, exc_info=True)
 
     async def _write_uncompressed(self, events: list) -> None:
         """

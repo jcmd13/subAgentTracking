@@ -110,7 +110,7 @@ class AnalyticsDBSubscriber(EventHandler):
 
         except Exception as e:
             self._error_count += 1
-            logger.error(f"Error in analytics subscriber for event {event.event_type}: {e}", exc_info=True)
+            logger.error("Error in analytics subscriber for event %s: %s", event.event_type, e, exc_info=True)
 
     async def _handle_agent_event(self, event: Event) -> None:
         """
@@ -340,15 +340,15 @@ class AnalyticsDBSubscriber(EventHandler):
         try:
             # Run batch insert in executor
             await loop.run_in_executor(None, flush_sync)
-
-            # Clear buffers
+        except Exception as e:
+            self._error_count += 1
+            logger.error("Error flushing analytics buffers: %s", e, exc_info=True)
+        finally:
+            # Clear buffers regardless of success/failure to avoid duplication
             self._agent_perf_buffer.clear()
             self._tool_usage_buffer.clear()
             self._error_buffer.clear()
             self._session_buffer.clear()
-
-        except Exception as e:
-            logger.error(f"Error flushing analytics buffers: {e}", exc_info=True)
 
     async def shutdown(self) -> None:
         """

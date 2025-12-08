@@ -60,7 +60,7 @@ Assessment: 70% foundation complete, 0% user-facing features complete
 ## Phase 0: Critical Bug Fixes
 
 **Duration:** 1 week  
-**Status:** 🔴 NOT STARTED  
+**Status:** 🟠 IN PROGRESS (0.0.3, 0.2.2, 0.2.3, 0.3.x, 0.4.1 complete; exception/backup hardening pending)  
 **Blocker Level:** MUST COMPLETE BEFORE ANY NEW FEATURES
 
 ### Critical Issues (System Non-Functional)
@@ -68,34 +68,52 @@ Assessment: 70% foundation complete, 0% user-facing features complete
 | Task | Description | Est. | Status |
 |------|-------------|------|--------|
 | 0.1.1 | BackupManager missing `is_available()`, `authenticate()`, `backup_session()` | 4h | ⬜ |
-| 0.1.2 | Replace deprecated `datetime.utcnow()` with `datetime.now(timezone.utc)` | 1h | ⬜ |
-| 0.1.3 | Thread safety on `_parent_event_stack` using ContextVars | 3h | ⬜ |
+| 0.1.2 | Replace deprecated `datetime.utcnow()` with `datetime.now(timezone.utc)` | 1h | ✅ |
+| 0.1.3 | Thread safety on `_parent_event_stack` using ContextVars | 3h | ✅ |
 
 ### High Priority Issues
 
 | Task | Description | Est. | Status |
 |------|-------------|------|--------|
-| 0.2.1 | Create custom exception hierarchy | 4h | ⬜ |
-| 0.2.2 | Make token budget configurable via config | 0.5h | ⬜ |
-| 0.2.3 | Fix ValidationEvent type mismatch (case normalization) | 1h | ⬜ |
-| 0.2.4 | Fix session duration timezone bug | 1h | ⬜ |
+| 0.2.1 | Create custom exception hierarchy | 4h | 🟠 In Progress (analytics/hooks/cost/subscribers hardened; activity_logger/backup_manager still to tighten) |
+| 0.2.2 | Make token budget configurable via config | 0.5h | ✅ |
+| 0.2.3 | Fix ValidationEvent type mismatch (case normalization) | 1h | ✅ |
+| 0.2.4 | Fix session duration timezone bug | 1h | ✅ |
 
 ### Medium Priority Issues
 
 | Task | Description | Est. | Status |
 |------|-------------|------|--------|
-| 0.3.1 | Fix schema validation bypass (don't write invalid events) | 0.5h | ⬜ |
-| 0.3.2 | Make file operations atomic (temp + rename) | 1h | ⬜ |
-| 0.3.3 | Add retry on snapshot write failure | 1h | ⬜ |
-| 0.3.4 | Expand event ID format to 6 digits | 0.25h | ⬜ |
+| 0.3.1 | Fix schema validation bypass (don't write invalid events) | 0.5h | ✅ |
+| 0.3.2 | Make file operations atomic (temp + rename) | 1h | ✅ |
+| 0.3.3 | Add retry on snapshot write failure | 1h | ✅ |
+| 0.3.4 | Expand event ID format to 6 digits | 0.25h | ✅ |
 
 ### Design Improvements
 
 | Task | Description | Est. | Status |
 |------|-------------|------|--------|
-| 0.4.1 | Persist snapshot counter across restarts | 2h | ⬜ |
+| 0.4.1 | Persist snapshot counter across restarts | 2h | ✅ |
 | 0.4.2 | Refactor circular dependencies with interfaces | 4h | ⬜ |
 | 0.4.3 | Thread-safe shutdown (use init lock) | 0.5h | ⬜ |
+
+### Phase 0A: Storage Directory Unification (.claude → .subagent)
+
+**Goal:** Align all code, tests, and docs on `.subagent/` while keeping backward compatibility for existing `.claude/` installs (AI-agnostic data root).
+
+| Task | Description | Est. | Status |
+|------|-------------|------|--------|
+| 0.0.1 | Audit and map all `.claude` references across code/tests/docs | 1h | ✅ |
+| 0.0.2 | Update config defaults/env to prefer `.subagent` (with opt-in shim for `.claude`) | 2h | ✅ |
+| 0.0.3 | Migrate docs/guides/scripts (`setup_google_drive.py`, examples) to `.subagent` | 2h | ✅ |
+| 0.0.4 | Add migration/back-compat layer (auto-detect `.claude`, warn, optional symlink/copy) | 2h | ⬜ |
+| 0.0.5 | Update tests/fixtures to new paths; keep adapters for legacy paths | 2h | ⬜ |
+
+**Exit Criteria:**
+- [ ] Default data root is `.subagent/` across config, CLI, and docs
+- [ ] Legacy `.claude/` installs continue to work or receive a clear migration path
+- [ ] Tests and smoke flows run against `.subagent/`
+- [ ] Guides and examples reference `.subagent/` only
 
 ### Phase 0 Exit Criteria
 
