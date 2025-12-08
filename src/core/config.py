@@ -150,6 +150,9 @@ class Config:
         # Token budget
         if env_token_budget := os.getenv("SUBAGENT_TOKEN_BUDGET"):
             self.default_token_budget = int(env_token_budget)
+        # Strict mode
+        if env_strict := os.getenv("SUBAGENT_STRICT_MODE"):
+            self.strict_mode = env_strict.lower() in ("true", "1", "yes")
 
     def _maybe_create_legacy_symlink(self) -> None:
         """
@@ -171,10 +174,6 @@ class Config:
             self._update_tracking_dirs()
         except Exception as e:
             logging.warning("Failed to create .subagent symlink to legacy .claude: %s", e, exc_info=True)
-
-        # Strict mode
-        if env_strict := os.getenv("SUBAGENT_STRICT_MODE"):
-            self.strict_mode = env_strict.lower() in ("true", "1", "yes")
 
     def _update_tracking_dirs(self):
         """Update all tracking directories based on claude_dir (data_dir)."""

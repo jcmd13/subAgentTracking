@@ -35,6 +35,7 @@ import gzip
 import threading
 import queue
 import contextvars
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
@@ -1330,6 +1331,7 @@ def tool_usage_context(
     except Exception as e:
         success = False
         error_msg = str(e)
+        logger.error("Error inside tool usage context for %s/%s: %s", agent, tool, e, exc_info=True)
         raise
 
     finally:
@@ -1394,3 +1396,5 @@ def agent_invocation_context(
         # Pop from parent stack
         if _get_parent_stack() and _get_parent_stack()[-1] == event_id:
             _get_parent_stack().pop()
+# Global logger for this module
+logger = logging.getLogger(__name__)
