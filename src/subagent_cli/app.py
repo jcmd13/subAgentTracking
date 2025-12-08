@@ -13,6 +13,7 @@ import yaml
 from src.core import config as core_config
 from src.core.activity_logger import list_log_files
 from src.core.activity_logger import get_current_session_id
+from src.core.config import Config
 
 app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
 
@@ -71,7 +72,7 @@ def _next_task_id(tasks: list[dict]) -> str:
 
 
 def _load_config() -> Dict[str, Any]:
-    """Load CLI config from YAML if present."""
+    """Load CLI config from YAML if present (with defaults)."""
     defaults: Dict[str, Any] = {
         "task_defaults": {"priority": 3},
         "status": {"watch_interval": 2.0},
@@ -81,8 +82,18 @@ def _load_config() -> Dict[str, Any]:
             data = yaml.safe_load(CONFIG_PATH.read_text()) or {}
             defaults.update(data)
         except Exception:
-            pass
+            typer.echo("Warning: Failed to parse .subagent/config.yaml, using defaults.")
     return defaults
+
+
+def _load_core_config(reload: bool = False) -> Config:
+    """
+    Load core config (respects SUBAGENT_DATA_DIR and SUBAGENT_TRACKING_ROOT).
+
+    Args:
+        reload: Force reload of config module state
+    """
+    return core_config.get_config(reload=reload)
 
 
 def _save_default_config() -> None:
