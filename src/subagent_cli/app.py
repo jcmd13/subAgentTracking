@@ -80,7 +80,7 @@ def _load_config() -> Dict[str, Any]:
     if CONFIG_PATH.exists():
         try:
             data = yaml.safe_load(CONFIG_PATH.read_text()) or {}
-            defaults.update(data)
+            defaults.update(_validate_cli_config(data, defaults))
         except Exception:
             typer.echo("Warning: Failed to parse .subagent/config.yaml, using defaults.")
     return defaults
@@ -94,6 +94,29 @@ def _load_core_config(reload: bool = False) -> Config:
         reload: Force reload of config module state
     """
     return core_config.get_config(reload=reload)
+
+
+def _validate_cli_config(config_data: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and normalize CLI config values."""
+    validated = defaults.copy()
+
+    task_defaults = config_data.get("task_defaults", {}) or {}
+    priority = task_defaults.get("priority", defaults["task_defaults"]["priority"])
+    if not isinstance(priority, int) or not (1 <= priority <= 5):
+        priority = defaults["task_defaults"]["priority"]
+    validated["task_defaults"]["priority"] = priority
+
+    status_cfg = config_data.get("status", {}) or {}
+    interval = status_cfg.get("watch_interval", defaults["status"]["watch_interval"])
+    try:
+        interval = float(interval)
+        if interval <= 0:
+            raise ValueError()
+    except Exception:
+        interval = defaults["status"]["watch_interval"]
+    validated["status"]["watch_interval"] = interval
+
+    return validated
 
 
 def _save_default_config() -> None:
