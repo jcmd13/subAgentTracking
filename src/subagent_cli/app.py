@@ -121,6 +121,9 @@ def status(
     cfg = core_config.get_config()
     def render() -> None:
         cfg_local = core_config.get_config(reload=True)
+        tasks = _load_tasks()
+        logs = list_log_files()
+        latest_log = logs[0]["file_path"] if logs else None
         payload = {
             "project_root": str(cfg_local.project_root),
             "logs_dir": str(cfg_local.logs_dir),
@@ -128,6 +131,15 @@ def status(
             "backup_enabled": getattr(cfg_local, "backup_enabled", False),
             "analytics_enabled": getattr(cfg_local, "analytics_enabled", False),
             "session_id_format": getattr(cfg_local, "session_id_format", "session_%Y%m%d_%H%M%S"),
+            "tasks": {
+                "count": len(tasks),
+                "open": len([t for t in tasks if t.get("status") != "done"]),
+                "latest": tasks[-1]["id"] if tasks else None,
+            },
+            "logs": {
+                "latest": str(latest_log) if latest_log else None,
+                "count": len(logs),
+            },
         }
         if json_output:
             typer.echo(json.dumps(payload, indent=2))
@@ -138,6 +150,11 @@ def status(
             typer.echo(f"Backup enabled:    {payload['backup_enabled']}")
             typer.echo(f"Analytics enabled: {payload['analytics_enabled']}")
             typer.echo(f"Session ID format: {payload['session_id_format']}")
+            typer.echo(f"Tasks:             {payload['tasks']['count']} total, {payload['tasks']['open']} open")
+            if payload["tasks"]["latest"]:
+                typer.echo(f"Latest task:       {payload['tasks']['latest']}")
+            if payload["logs"]["latest"]:
+                typer.echo(f"Latest log:        {payload['logs']['latest']}")
 
     if watch:
         try:
@@ -156,6 +173,8 @@ def task_add(
     description: str = typer.Argument(..., help="Task description"),
     priority: int = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
     task_type: Optional[str] = typer.Option(None, "--type", "-t", help="Task type/category"),
+    deadline: Optional[str] = typer.Option(None, "--deadline", "-d", help="Deadline (ISO date/time or freeform)"),
+    criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Acceptance criteria (repeatable)"),
 ) -> None:
     """
     Create a new task in .subagent/tasks/tasks.json.
@@ -170,6 +189,8 @@ def task_add(
             "description": description,
             "priority": priority or config_values["task_defaults"].get("priority", 3),
             "type": task_type,
+            "deadline": deadline,
+            "acceptance_criteria": criteria,
             "created_at": datetime.utcnow().isoformat() + "Z",
             "status": "pending",
         }
@@ -192,7 +213,10 @@ def task_list(json_output: bool = typer.Option(False, "--json", help="Output JSO
         typer.echo("No tasks found.")
         return
     for task in tasks:
-        typer.echo(f"{task['id']}: {task['description']} [{task.get('status','pending')}] (p{task.get('priority',3)})")
+        summary = f"{task['id']}: {task['description']} [{task.get('status','pending')}] (p{task.get('priority',3)})"
+        if task.get("deadline"):
+            summary += f" due {task['deadline']}"
+        typer.echo(summary)
 
 
 @app.command("task-show")
