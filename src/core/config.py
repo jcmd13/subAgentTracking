@@ -89,8 +89,14 @@ class Config:
     def _load_from_env(self):
         """Override defaults with environment variables."""
         # Base paths
-        if env_root := os.getenv("SUBAGENT_TRACKING_ROOT"):
-            self.project_root = Path(env_root)
+        data_dir_override = os.getenv("SUBAGENT_DATA_DIR")
+        root_override = os.getenv("SUBAGENT_TRACKING_ROOT")
+
+        if data_dir_override:
+            self.claude_dir = Path(data_dir_override)
+            self._update_tracking_dirs()
+        elif root_override:
+            self.project_root = Path(root_override)
             self.claude_dir = self.project_root / ".claude"
             self._update_tracking_dirs()
 

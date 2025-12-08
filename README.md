@@ -47,6 +47,24 @@ A comprehensive tracking and observability system designed for **any Claude Code
 
 ---
 
+## 🧭 CLI (Phase 1 Skeleton)
+
+Install in editable mode to get the `subagent` command:
+```bash
+pip install -e .
+```
+
+Usage:
+- `subagent init` — create `.subagent/` structure (logs/state/tasks/etc).
+- `subagent status [--json] [--watch]` — view current configuration; watch mode refreshes every 2s by default.
+- `subagent task-add "description" [-p PRIORITY]` — add a task (stored in `.subagent/tasks/tasks.json`).
+- `subagent task-list [--json]` — list tasks; `task-show <id>` for details.
+- `subagent logs [--follow] [--count N] [--task-id ID]` — read or tail the latest activity log with optional task filtering.
+
+The CLI sets `SUBAGENT_DATA_DIR=.subagent` so core modules write/read from the same location.
+
+---
+
 ## 💡 Why Use This?
 
 ### Problem: Loss of Context & Work

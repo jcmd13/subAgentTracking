@@ -1,5 +1,6 @@
 import gzip
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,9 @@ app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
 
 SUBAGENT_ROOT = Path(".subagent")
 TASKS_FILE = SUBAGENT_ROOT / "tasks" / "tasks.json"
+
+# Ensure core config uses .subagent for data directories
+os.environ.setdefault("SUBAGENT_DATA_DIR", str(SUBAGENT_ROOT))
 
 
 # ---------------------------------------------------------------------------
@@ -74,28 +78,45 @@ def init() -> None:
 
 
 @app.command()
-def status(json_output: bool = typer.Option(False, "--json", help="Output JSON")) -> None:
+def status(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Continuously refresh status"),
+    interval: float = typer.Option(2.0, "--interval", "-i", help="Seconds between updates when watching"),
+) -> None:
     """
     Show current system status.
     """
     cfg = core_config.get_config()
-    payload = {
-        "project_root": str(cfg.project_root),
-        "logs_dir": str(cfg.logs_dir),
-        "state_dir": str(cfg.state_dir),
-        "backup_enabled": getattr(cfg, "backup_enabled", False),
-        "analytics_enabled": getattr(cfg, "analytics_enabled", False),
-        "session_id_format": getattr(cfg, "session_id_format", "session_%Y%m%d_%H%M%S"),
-    }
-    if json_output:
-        typer.echo(json.dumps(payload, indent=2))
+    def render() -> None:
+        cfg_local = core_config.get_config(reload=True)
+        payload = {
+            "project_root": str(cfg_local.project_root),
+            "logs_dir": str(cfg_local.logs_dir),
+            "state_dir": str(cfg_local.state_dir),
+            "backup_enabled": getattr(cfg_local, "backup_enabled", False),
+            "analytics_enabled": getattr(cfg_local, "analytics_enabled", False),
+            "session_id_format": getattr(cfg_local, "session_id_format", "session_%Y%m%d_%H%M%S"),
+        }
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2))
+        else:
+            typer.echo(f"Project root:      {payload['project_root']}")
+            typer.echo(f"Logs dir:          {payload['logs_dir']}")
+            typer.echo(f"State dir:         {payload['state_dir']}")
+            typer.echo(f"Backup enabled:    {payload['backup_enabled']}")
+            typer.echo(f"Analytics enabled: {payload['analytics_enabled']}")
+            typer.echo(f"Session ID format: {payload['session_id_format']}")
+
+    if watch:
+        try:
+            while True:
+                typer.clear()
+                render()
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            return
     else:
-        typer.echo(f"Project root:      {payload['project_root']}")
-        typer.echo(f"Logs dir:          {payload['logs_dir']}")
-        typer.echo(f"State dir:         {payload['state_dir']}")
-        typer.echo(f"Backup enabled:    {payload['backup_enabled']}")
-        typer.echo(f"Analytics enabled: {payload['analytics_enabled']}")
-        typer.echo(f"Session ID format: {payload['session_id_format']}")
+        render()
 
 
 @app.command("task-add")
@@ -150,7 +171,11 @@ def task_show(task_id: str) -> None:
 
 
 @app.command()
-def logs(follow: bool = typer.Option(False, "--follow", "-f", help="Tail the latest log"), count: int = typer.Option(20, "--count", "-n", help="Lines to show when not following")) -> None:
+def logs(
+    follow: bool = typer.Option(False, "--follow", "-f", help="Tail the latest log"),
+    count: int = typer.Option(20, "--count", "-n", help="Lines to show when not following"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", help="Filter log lines by task id"),
+) -> None:
     """
     Show or tail the latest activity log.
     """
@@ -166,7 +191,7 @@ def logs(follow: bool = typer.Option(False, "--follow", "-f", help="Tail the lat
         _tail_file(latest)
     else:
         lines = _read_last_lines(latest, count)
-        for line in lines:
+        for line in _filter_lines_by_task(lines, task_id):
             typer.echo(line.rstrip("\n"))
 
 
@@ -188,11 +213,27 @@ def _tail_file(path: Path) -> None:
             while True:
                 line = f.readline()
                 if line:
-                    typer.echo(line.rstrip("\n"))
+                    for filtered in _filter_lines_by_task([line], None):
+                        typer.echo(filtered.rstrip("\n"))
                 else:
                     time.sleep(1)
         except KeyboardInterrupt:
             return
+
+
+def _filter_lines_by_task(lines: list[str], task_id: Optional[str]) -> list[str]:
+    if not task_id:
+        return lines
+
+    filtered = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except Exception:
+            continue
+        if event.get("task") == task_id or event.get("task_id") == task_id:
+            filtered.append(line)
+    return filtered
 
 
 def main() -> None:
