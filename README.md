@@ -172,9 +172,12 @@ pip install -r requirements.txt
 # 3. Set up Google Drive API (one-time, 10 min)
 python setup_google_drive.py
 
-# 4. Copy to your Claude Code project
-cp -r .claude /path/to/your/project/
+# 4. Copy to your project (default data dir is .subagent/)
+cp -r .subagent /path/to/your/project/  # legacy installs may still have .claude/
 cp src/core/* /path/to/your/project/src/core/
+
+# Tip: migrating a legacy .claude/ without copying? Set SUBAGENT_MIGRATE_LEGACY=1
+# and the tooling will create a .subagent symlink pointing to your existing .claude/ data.
 
 # 5. Done! Tracking starts automatically
 ```
@@ -223,7 +226,7 @@ The training repo includes:
 
 ```
 subAgentTracking/
-├── .claude/                           # Tracking system config
+├── .subagent/                        # Tracking system config (default; .claude/ still supported for legacy)
 │   ├── AGENT_TRACKING_SYSTEM.md      # Complete documentation
 │   ├── STORAGE_ARCHITECTURE.md       # Storage strategy
 │   ├── TRACKING_QUICK_REFERENCE.md   # Quick lookup guide
@@ -267,9 +270,9 @@ subAgentTracking/
 ## 📚 Documentation
 
 ### Core Docs
-- **[AGENT_TRACKING_SYSTEM.md](.claude/AGENT_TRACKING_SYSTEM.md)** - Complete technical specification
-- **[STORAGE_ARCHITECTURE.md](.claude/STORAGE_ARCHITECTURE.md)** - Storage strategy & capacity planning
-- **[TRACKING_QUICK_REFERENCE.md](.claude/TRACKING_QUICK_REFERENCE.md)** - Quick lookup guide
+- **[AGENT_TRACKING_SYSTEM.md](.subagent/AGENT_TRACKING_SYSTEM.md)** - Complete technical specification
+- **[STORAGE_ARCHITECTURE.md](.subagent/STORAGE_ARCHITECTURE.md)** - Storage strategy & capacity planning
+- **[TRACKING_QUICK_REFERENCE.md](.subagent/TRACKING_QUICK_REFERENCE.md)** - Quick lookup guide
 
 ### Setup Guides
 - **[SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** - Step-by-step installation
