@@ -10,6 +10,8 @@ import sys
 import asyncio
 from pathlib import Path
 
+import pytest
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -86,6 +88,7 @@ def test_context_optimization():
         return False
 
 
+@pytest.mark.asyncio
 async def test_agent_coordination():
     """Test 4: Verify agent coordination works."""
     print("\n=== Test 4: Agent Coordination ===")

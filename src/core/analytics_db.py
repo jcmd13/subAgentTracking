@@ -199,6 +199,10 @@ class AnalyticsDB:
         self.db_path = db_path or self.config.analytics_dir / self.config.analytics_db_name
         self._connection = None
 
+        # Keep singleton aligned with the latest instantiated DB
+        global _db_instance
+        _db_instance = self
+
     @contextmanager
     def get_connection(self):
         """

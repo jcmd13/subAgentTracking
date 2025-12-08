@@ -269,7 +269,7 @@ def take_snapshot(
             "token_usage": {
                 "tokens_consumed": token_count or 0,
                 "tokens_remaining": tokens_remaining or 0,
-                "tokens_total": cfg.default_token_budget,
+                "tokens_total": getattr(cfg, "default_token_budget", 200000),
             },
             "elapsed_time_seconds": elapsed_time_seconds,
         },

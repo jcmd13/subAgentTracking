@@ -55,8 +55,8 @@ COST_OPTIMIZATION_OPPORTUNITY = "cost.optimization_opportunity"
 WORKFLOW_STARTED = "workflow.started"
 WORKFLOW_COMPLETED = "workflow.completed"
 
-# All event types (for iteration)
-ALL_EVENT_TYPES = [
+# Base event types (20, per specification)
+BASE_EVENT_TYPES = [
     # Agent events
     AGENT_INVOKED, AGENT_COMPLETED, AGENT_FAILED, AGENT_TIMEOUT, AGENT_HANDOFF,
     # Tool events
@@ -66,9 +66,13 @@ ALL_EVENT_TYPES = [
     # Session events
     SESSION_STARTED, SESSION_TOKEN_WARNING, SESSION_HANDOFF_REQUIRED, SESSION_ENDED,
     # Cost events
-    COST_TRACKED, COST_BUDGET_WARNING, COST_OPTIMIZATION_OPPORTUNITY,
-    # Workflow events
-    WORKFLOW_STARTED, WORKFLOW_COMPLETED
+    COST_TRACKED, COST_BUDGET_WARNING, COST_OPTIMIZATION_OPPORTUNITY
+]
+
+# All event types (includes workflow extensions)
+ALL_EVENT_TYPES = BASE_EVENT_TYPES + [
+    WORKFLOW_STARTED,
+    WORKFLOW_COMPLETED,
 ]
 
 # ============================================================================
@@ -942,7 +946,7 @@ def get_all_event_types() -> List[str]:
         >>> len(event_types)
         20
     """
-    return ALL_EVENT_TYPES.copy()
+    return BASE_EVENT_TYPES.copy()
 
 
 def is_valid_event_type(event_type: str) -> bool:

@@ -36,10 +36,10 @@ class Event:
         session_id: Session this event belongs to
     """
     event_type: str
-    timestamp: datetime
-    payload: Dict[str, Any]
-    trace_id: str
-    session_id: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    payload: Dict[str, Any] = field(default_factory=dict)
+    trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str = "session_default"
 
     def __post_init__(self):
         """Validate event fields"""

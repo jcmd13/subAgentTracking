@@ -12,6 +12,7 @@ Usage:
 """
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
@@ -147,9 +148,7 @@ class Config:
     @property
     def activity_log_path(self) -> Path:
         """Get path for current session's activity log."""
-        from datetime import datetime
-
-        session_id = datetime.now().strftime(self.session_id_format)
+        session_id = datetime.now(timezone.utc).strftime(self.session_id_format)
         return self.logs_dir / f"{session_id}.jsonl"
 
     @property

@@ -16,6 +16,14 @@ matplotlib>=3.7.0
 pydantic>=2.0.0
 jsonschema>=4.19.0
 
+# Environment loading
+python-dotenv>=1.0.0
+
+# LLM providers
+google-generativeai>=0.8.5
+openai>=1.0.0
+ollama>=0.6.1
+
 # WebSocket support (Phase 3: Observability Platform)
 websockets>=12.0
 

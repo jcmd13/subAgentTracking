@@ -42,7 +42,7 @@ from contextlib import contextmanager
 import time
 import atexit
 
-from src.core.config import get_config
+from src.core import config
 from src.core.schemas import (
     AgentInvocationEvent,
     AgentStatus,
@@ -82,7 +82,8 @@ class EventCounter:
         """
         with self._lock:
             self._counter += 1
-            return f"evt_{self._counter:03d}"
+            width = getattr(config.get_config(), "event_id_width", 3)
+            return f"evt_{self._counter:0{width}d}"
 
     def get_count(self) -> int:
         """Get current event count."""
@@ -102,8 +103,9 @@ def generate_session_id() -> str:
     Returns:
         Session ID (e.g., "session_20251102_153000")
     """
-    config = get_config()
-    return datetime.now().strftime(config.session_id_format)
+    cfg = config.get_config()
+    fmt = getattr(cfg, "session_id_format", "session_%Y%m%d_%H%M%S")
+    return datetime.now(timezone.utc).strftime(fmt)
 
 
 def get_iso_timestamp() -> str:
@@ -121,6 +123,10 @@ def get_iso_timestamp() -> str:
 # ============================================================================
 # Validation is now handled by Pydantic schemas in src.core.schemas
 # Use validate_event() and serialize_event() from schemas module
+
+# Backward-compatible alias so callers/tests can monkeypatch get_config directly
+def get_config():
+    return config.get_config()
 
 
 # ============================================================================
@@ -292,14 +298,14 @@ def list_log_files() -> List[Dict[str, Any]]:
         >>> for f in files:
         ...     print(f"{f['session_id']}: {f['file_size_bytes']} bytes")
     """
-    config = get_config()
+    cfg = config.get_config()
     log_files = []
 
-    if not config.logs_dir.exists():
+    if not cfg.logs_dir.exists():
         return log_files
 
     # Find all .jsonl and .jsonl.gz files
-    for file_path in config.logs_dir.iterdir():
+    for file_path in cfg.logs_dir.iterdir():
         if not file_path.is_file():
             continue
 
@@ -413,11 +419,11 @@ def rotate_logs(retention_count: Optional[int] = None) -> Dict[str, Any]:
         >>> result = rotate_logs(retention_count=3)
         >>> print(f"Deleted {result['files_deleted']} files, freed {result['bytes_freed']} bytes")
     """
-    config = get_config()
+    cfg = config.get_config()
 
     # Get retention count from config if not provided
     if retention_count is None:
-        retention_count = config.activity_log_retention_count
+        retention_count = getattr(cfg, "activity_log_retention_count", 2)
 
     # Get all log files
     log_files = list_log_files()
@@ -513,21 +519,21 @@ def initialize(session_id: Optional[str] = None):
         if _initialized:
             return
 
-        config = get_config()
+        cfg = config.get_config()
 
         # Always create session ID and event counter (even if logging disabled)
         _session_id = session_id or generate_session_id()
         _event_counter = EventCounter()
 
         # Create writer only if logging enabled
-        if config.activity_log_enabled:
+        if cfg.activity_log_enabled:
             # Create log file path
-            log_path = config.logs_dir / f"{_session_id}.jsonl"
-            if config.activity_log_compression:
+            log_path = cfg.logs_dir / f"{_session_id}.jsonl"
+            if cfg.activity_log_compression:
                 log_path = log_path.with_suffix(".jsonl.gz")
 
             # Create threaded writer
-            _writer = ThreadedJSONLWriter(log_path, use_compression=config.activity_log_compression)
+            _writer = ThreadedJSONLWriter(log_path, use_compression=cfg.activity_log_compression)
             _writer.start()
 
             # Register shutdown handler
@@ -615,14 +621,14 @@ def _write_event(event: dict, event_type: str) -> str:
     if not _initialized:
         initialize()
 
-    config = get_config()
+    cfg = config.get_config()
 
     # Skip if logging disabled
-    if not config.activity_log_enabled or not _writer:
+    if not cfg.activity_log_enabled or not _writer:
         return event.get("event_id", "evt_000")
 
     # Validate schema using Pydantic if enabled
-    if config.validate_event_schemas:
+    if cfg.validate_event_schemas:
         try:
             # Validate and convert to Pydantic model
             validated_event = validate_event(event)
@@ -630,7 +636,7 @@ def _write_event(event: dict, event_type: str) -> str:
             event = serialize_event(validated_event)
         except Exception as e:
             error_msg = f"Pydantic validation failed: {str(e)}"
-            if config.strict_mode:
+            if cfg.strict_mode:
                 raise ValueError(error_msg)
             else:
                 import sys
@@ -956,13 +962,14 @@ def log_decision(
 def log_error(
     agent: str,
     error_type: str,
-    error_message: str,
-    context: Dict[str, Any],
+    error_message: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
     severity: str = "medium",
     stack_trace: Optional[str] = None,
     attempted_fix: Optional[str] = None,
     fix_successful: Optional[bool] = None,
     recovery_time_ms: Optional[int] = None,
+    message: Optional[str] = None,
     **kwargs,
 ) -> str:
     """
@@ -980,6 +987,7 @@ def log_error(
         attempted_fix: Optional description of fix attempt
         fix_successful: Optional whether fix succeeded
         recovery_time_ms: Optional time to recover from error (if successful)
+        message: Backward-compatible alias for error_message
         **kwargs: Additional fields to include in event
 
     Returns:
@@ -1002,6 +1010,10 @@ def log_error(
     event_id = _event_counter.next_id()
     parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
+    resolved_message = error_message or message
+    if resolved_message is None:
+        resolved_message = ""
+
     # Build event matching ErrorEvent schema (flat structure)
     event = {
         "event_type": "error",
@@ -1011,9 +1023,9 @@ def log_error(
         "parent_event_id": parent_id,
         "agent": agent,
         "error_type": error_type,
-        "error_message": error_message,
+        "error_message": resolved_message,
         "severity": severity,
-        "context": context,
+        "context": context or {},
     }
 
     # Add optional fields
@@ -1035,14 +1047,16 @@ def log_error(
 
 
 def log_context_snapshot(
-    tokens_before: int,
-    tokens_after: int,
-    tokens_consumed: int,
-    tokens_remaining: int,
-    files_in_context: List[str],
+    tokens_before: Optional[int] = None,
+    tokens_after: Optional[int] = None,
+    tokens_consumed: Optional[int] = None,
+    tokens_remaining: Optional[int] = None,
+    files_in_context: Optional[List[str]] = None,
     tokens_total_budget: Optional[int] = None,
     memory_mb: Optional[float] = None,
     agent: Optional[str] = None,
+    trigger: Optional[str] = None,
+    snapshot: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> str:
     """
@@ -1059,6 +1073,8 @@ def log_context_snapshot(
         tokens_total_budget: Total token budget for session (default: from config.default_token_budget)
         memory_mb: Optional memory usage in MB
         agent: Optional agent associated with this snapshot
+        trigger: Optional trigger description
+        snapshot: Backward-compatible dict with keys like tokens_used/agents_invoked/tasks_completed
         **kwargs: Additional fields to include in event
 
     Returns:
@@ -1078,9 +1094,24 @@ def log_context_snapshot(
         initialize()
 
     # Get token budget from config if not provided
+    cfg = config.get_config()
     if tokens_total_budget is None:
-        cfg = get_config()
-        tokens_total_budget = cfg.default_token_budget
+        tokens_total_budget = getattr(cfg, "default_token_budget", 200000)
+
+    # Backward compatibility: allow single snapshot dict payload
+    if snapshot and isinstance(snapshot, dict):
+        tokens_before = snapshot.get("tokens_before") or snapshot.get("tokens_used") or tokens_before
+        tokens_after = snapshot.get("tokens_after") or tokens_after
+        tokens_consumed = snapshot.get("tokens_consumed") or tokens_consumed
+        tokens_remaining = snapshot.get("tokens_remaining") or tokens_remaining
+        files_in_context = snapshot.get("files_in_context") or files_in_context
+
+    # Provide safe defaults if callers omit fields
+    tokens_before = tokens_before or 0
+    tokens_consumed = tokens_consumed if tokens_consumed is not None else 0
+    tokens_after = tokens_after if tokens_after is not None else tokens_before + tokens_consumed
+    tokens_remaining = tokens_remaining if tokens_remaining is not None else max(tokens_total_budget - tokens_after, 0)
+    files_in_context = files_in_context or []
 
     event_id = _event_counter.next_id()
 
@@ -1099,6 +1130,9 @@ def log_context_snapshot(
         "files_in_context": files_in_context,
         "files_in_context_count": len(files_in_context),
     }
+
+    if trigger:
+        event["trigger"] = trigger
 
     # Add optional fields
     if memory_mb is not None:
@@ -1163,10 +1197,10 @@ def _normalize_validation_status(status: str) -> str:
 
 def log_validation(
     agent: str,
-    task: str,
-    validation_type: str,
-    checks: Dict[str, str],
-    result: str,
+    task: Optional[str] = None,
+    validation_type: str = "",
+    checks: Optional[Dict[str, str]] = None,
+    result: str = "",
     failures: Optional[List[str]] = None,
     warnings: Optional[List[str]] = None,
     metrics: Optional[Dict[str, Any]] = None,
@@ -1212,7 +1246,20 @@ def log_validation(
     if not _event_counter or not _session_id:
         initialize()
 
-    # Normalize all validation statuses
+    # Normalize all validation statuses (accept dicts or list of dicts)
+    checks = checks or {}
+    if isinstance(checks, list):
+        # Convert list of {name, pass} style dicts to mapping
+        check_map = {}
+        for idx, item in enumerate(checks):
+            if isinstance(item, dict):
+                name = item.get("name") or f"check_{idx}"
+                status_val = item.get("pass") if "pass" in item else item.get("status", item)
+                check_map[name] = status_val
+            else:
+                check_map[f"check_{idx}"] = item
+        checks = check_map
+
     normalized_checks = {
         check_name: _normalize_validation_status(check_status)
         for check_name, check_status in checks.items()
@@ -1230,7 +1277,7 @@ def log_validation(
         "event_id": event_id,
         "parent_event_id": parent_id,
         "agent": agent,
-        "task": task,
+        "task": task or "",
         "validation_type": validation_type,
         "checks": normalized_checks,
         "result": normalized_result,

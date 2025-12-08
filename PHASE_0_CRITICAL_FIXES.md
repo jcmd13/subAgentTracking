@@ -598,6 +598,19 @@ return f"evt_{session_id}_{self._counter}"
 
 ---
 
+#### Newly Discovered (Tests - 2025-12-08)
+
+| Task | Description | Est. | Status |
+|------|-------------|------|--------|
+| 0.3.5 | Align Event bus defaults with realtime monitor fixtures (auto timestamp/trace/session defaults) | 0.5h | ✅ |
+| 0.3.6 | Make error/context snapshot logging backward compatible (`message` alias, optional context, emit tokens budget in snapshots) | 1h | ⬜ |
+| 0.3.7 | Bring BackupManager to test parity (GOOGLE_DRIVE_AVAILABLE gating, archive naming with activity.jsonl, list/find/upload/download stubs) | 3h | ⬜ |
+| 0.3.8 | Harden realtime monitor server start under sandboxed/multi-agent runs (safe ports, graceful skip without network) | 2h | ⬜ |
+| 0.3.9 | Normalize event type registry count to expected 20 (or reconcile spec/tests) | 0.5h | ⬜ |
+| 0.3.10 | Mark async/smoke/LLM tests to assert instead of returning bool to avoid pytest warnings | 0.5h | ⬜ |
+
+---
+
 ### 0.4 Design Issues (Address in Phase 0-1)
 
 #### Task 0.4.1: Persist Snapshot Counter
@@ -830,7 +843,7 @@ def test_validation_case_insensitive():
 
 def test_session_duration_utc():
     """Session duration correct regardless of system timezone."""
-    
+
 def test_timestamps_always_utc():
     """All generated timestamps are UTC."""
 ```
@@ -883,6 +896,16 @@ for t in threads: t.join()
 print('Thread safety test passed')
 "
 ```
+
+---
+
+## Multi-Agent Stability Notes (Uncoordinated AIs)
+
+- Run smoke/tests sequentially; avoid concurrent realtime monitor servers on the same port (use ephemeral ports or skip when network unavailable).
+- Share the same virtualenv across agents; record any new dependencies in `requirements.txt` before parallel work resumes.
+- Prefer compatibility helpers (Event defaults, tolerant logging APIs) so fixtures from different agents interoperate cleanly.
+- When sandboxed ports/files are blocked, switch components to no-op or skip mode rather than hard failing.
+- Log new incompatibilities in the Phase 0 table (0.3.x) before handing off to another agent.
 
 ---
 
