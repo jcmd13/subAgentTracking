@@ -63,6 +63,9 @@ Usage:
 
 The CLI sets `SUBAGENT_DATA_DIR=.subagent` so core modules write/read from the same location.
 
+Config file:
+- `.subagent/config.yaml` (auto-created on `init`) currently includes task defaults and status watch interval.
+
 ---
 
 ## 💡 Why Use This?

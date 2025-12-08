@@ -4,9 +4,10 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 import typer
+import yaml
 
 from src.core import config as core_config
 from src.core.activity_logger import list_log_files
@@ -15,6 +16,7 @@ app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
 
 SUBAGENT_ROOT = Path(".subagent")
 TASKS_FILE = SUBAGENT_ROOT / "tasks" / "tasks.json"
+CONFIG_PATH = SUBAGENT_ROOT / "config.yaml"
 
 # Ensure core config uses .subagent for data directories
 os.environ.setdefault("SUBAGENT_DATA_DIR", str(SUBAGENT_ROOT))
@@ -60,7 +62,36 @@ def _save_tasks(tasks: list[dict]) -> None:
 
 
 def _next_task_id(tasks: list[dict]) -> str:
-    return f"task_{len(tasks)+1:03d}"
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return f"task_{ts}_{len(tasks)+1:03d}"
+
+
+def _load_config() -> Dict[str, Any]:
+    """Load CLI config from YAML if present."""
+    defaults: Dict[str, Any] = {
+        "task_defaults": {"priority": 3},
+        "status": {"watch_interval": 2.0},
+    }
+    if CONFIG_PATH.exists():
+        try:
+            data = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+            defaults.update(data)
+        except Exception:
+            pass
+    return defaults
+
+
+def _save_default_config() -> None:
+    if not CONFIG_PATH.exists():
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(
+            yaml.safe_dump(
+                {
+                    "task_defaults": {"priority": 3},
+                    "status": {"watch_interval": 2.0},
+                }
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +105,7 @@ def init() -> None:
     Initialize local SubAgent directories (.subagent/).
     """
     _ensure_subagent_dirs()
+    _save_default_config()
     typer.echo(f"Initialized {SUBAGENT_ROOT} directory structure.")
 
 
@@ -120,18 +152,24 @@ def status(
 
 
 @app.command("task-add")
-def task_add(description: str = typer.Argument(..., help="Task description"), priority: int = typer.Option(3, "--priority", "-p", help="Priority 1-5")) -> None:
+def task_add(
+    description: str = typer.Argument(..., help="Task description"),
+    priority: int = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
+    task_type: Optional[str] = typer.Option(None, "--type", "-t", help="Task type/category"),
+) -> None:
     """
     Create a new task in .subagent/tasks/tasks.json.
     """
     _ensure_subagent_dirs()
+    config_values = _load_config()
     tasks = _load_tasks()
     task_id = _next_task_id(tasks)
     tasks.append(
         {
             "id": task_id,
             "description": description,
-            "priority": priority,
+            "priority": priority or config_values["task_defaults"].get("priority", 3),
+            "type": task_type,
             "created_at": datetime.utcnow().isoformat() + "Z",
             "status": "pending",
         }
