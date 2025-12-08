@@ -1040,7 +1040,7 @@ def log_context_snapshot(
     tokens_consumed: int,
     tokens_remaining: int,
     files_in_context: List[str],
-    tokens_total_budget: int = 200000,
+    tokens_total_budget: Optional[int] = None,
     memory_mb: Optional[float] = None,
     agent: Optional[str] = None,
     **kwargs,
@@ -1056,7 +1056,7 @@ def log_context_snapshot(
         tokens_consumed: Tokens consumed by this operation
         tokens_remaining: Tokens remaining in budget
         files_in_context: List of files currently in context
-        tokens_total_budget: Total token budget for session (default: 200000)
+        tokens_total_budget: Total token budget for session (default: from config.default_token_budget)
         memory_mb: Optional memory usage in MB
         agent: Optional agent associated with this snapshot
         **kwargs: Additional fields to include in event
@@ -1076,6 +1076,11 @@ def log_context_snapshot(
     """
     if not _event_counter or not _session_id:
         initialize()
+
+    # Get token budget from config if not provided
+    if tokens_total_budget is None:
+        cfg = get_config()
+        tokens_total_budget = cfg.default_token_budget
 
     event_id = _event_counter.next_id()
 

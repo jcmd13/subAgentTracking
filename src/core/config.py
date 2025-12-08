@@ -68,6 +68,7 @@ class Config:
 
     # Session settings
     token_limit_warning_threshold: float = 0.9  # Warn at 90% token usage
+    default_token_budget: int = 200000  # Default token budget per session
     session_id_format: str = "session_%Y%m%d_%H%M%S"
 
     # Storage limits (local)
@@ -110,6 +111,10 @@ class Config:
         # Performance budgets
         if env_log_latency := os.getenv("SUBAGENT_LOG_LATENCY_MS"):
             self.event_logging_max_latency_ms = float(env_log_latency)
+
+        # Token budget
+        if env_token_budget := os.getenv("SUBAGENT_TOKEN_BUDGET"):
+            self.default_token_budget = int(env_token_budget)
 
         # Strict mode
         if env_strict := os.getenv("SUBAGENT_STRICT_MODE"):
@@ -292,6 +297,7 @@ class Config:
             "backup_max_duration_minutes": self.backup_max_duration_minutes,
             # Session settings
             "token_limit_warning_threshold": self.token_limit_warning_threshold,
+            "default_token_budget": self.default_token_budget,
             "session_id_format": self.session_id_format,
             # Storage limits
             "max_local_storage_mb": self.max_local_storage_mb,

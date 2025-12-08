@@ -284,7 +284,7 @@ class ContextSnapshotEvent(BaseEvent):
     tokens_after: int = Field(..., description="Token count after this operation")
     tokens_consumed: int = Field(..., description="Tokens consumed by this operation")
     tokens_remaining: int = Field(..., description="Tokens remaining in budget")
-    tokens_total_budget: int = Field(200000, description="Total token budget for session")
+    tokens_total_budget: int = Field(..., description="Total token budget for session (from config)")
     files_in_context: List[str] = Field(..., description="List of files currently in context")
     files_in_context_count: int = Field(..., description="Number of files in context")
     memory_mb: Optional[float] = Field(None, description="Memory usage in MB")
