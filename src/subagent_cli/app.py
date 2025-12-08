@@ -4,7 +4,8 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Iterable
+from collections import deque
 
 import typer
 import yaml
@@ -59,11 +60,13 @@ def _load_tasks() -> list[dict]:
 
 def _save_tasks(tasks: list[dict]) -> None:
     TASKS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TASKS_FILE.write_text(json.dumps(tasks, indent=2))
+    tmp_path = TASKS_FILE.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(tasks, indent=2))
+    tmp_path.replace(TASKS_FILE)
 
 
 def _next_task_id(tasks: list[dict]) -> str:
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"task_{ts}_{len(tasks)+1:03d}"
 
 
@@ -175,6 +178,28 @@ def status(
         render()
 
 
+def _render_task(task: dict, json_output: bool = False) -> None:
+    if json_output:
+        typer.echo(json.dumps(task, indent=2))
+        return
+
+    typer.echo(f"{task.get('id')} [{task.get('status', 'pending')}]")
+    typer.echo(f"  desc:      {task.get('description')}")
+    typer.echo(f"  priority:  {task.get('priority')}")
+    if task.get("type"):
+        typer.echo(f"  type:      {task.get('type')}")
+    if task.get("deadline"):
+        typer.echo(f"  deadline:  {task.get('deadline')}")
+    if task.get("acceptance_criteria"):
+        typer.echo("  criteria:")
+        for c in task.get("acceptance_criteria", []):
+            typer.echo(f"    - {c}")
+    if task.get("created_at"):
+        typer.echo(f"  created:   {task.get('created_at')}")
+    if task.get("status"):
+        typer.echo(f"  status:    {task.get('status')}")
+
+
 @app.command("task-add")
 def task_add(
     description: str = typer.Argument(..., help="Task description"),
@@ -199,12 +224,107 @@ def task_add(
             "type": task_type,
             "deadline": deadline,
             "acceptance_criteria": criteria,
-            "created_at": datetime.utcnow().isoformat() + "Z",
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "status": status,
         }
     )
     _save_tasks(tasks)
     typer.echo(f"Created task {task_id}: {description}")
+
+
+@app.command("task-list")
+def task_list(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
+    open_only: bool = typer.Option(False, "--open", help="Show only non-done tasks"),
+) -> None:
+    """List tasks stored in .subagent/tasks/tasks.json."""
+    tasks = _load_tasks()
+    if open_only:
+        tasks = [t for t in tasks if t.get("status") != "done"]
+    if status:
+        tasks = [t for t in tasks if t.get("status") == status]
+
+    if json_output:
+        typer.echo(json.dumps(tasks, indent=2))
+    else:
+        if not tasks:
+            typer.echo("No tasks found.")
+            return
+        for task in tasks:
+            _render_task(task, json_output=False)
+            typer.echo("")
+
+
+@app.command("task-show")
+def task_show(
+    task_id: str = typer.Argument(..., help="Task ID to show"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Show a single task by ID."""
+    tasks = _load_tasks()
+    task = next((t for t in tasks if t.get("id") == task_id), None)
+    if not task:
+        typer.echo(f"Task not found: {task_id}")
+        raise typer.Exit(code=1)
+    _render_task(task, json_output=json_output)
+
+
+def _tail_file_lines(path: Path, lines: int = 20) -> Iterable[str]:
+    """Return last N lines from a text or gzip file."""
+    if not path.exists():
+        return []
+    buffer: deque[str] = deque(maxlen=lines)
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            for line in f:
+                buffer.append(line.rstrip("\n"))
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                buffer.append(line.rstrip("\n"))
+    return list(buffer)
+
+
+@app.command("logs")
+def logs(
+    session_id: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID to show"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Follow the latest log"),
+    lines: int = typer.Option(20, "--lines", "-n", help="Number of lines to show"),
+) -> None:
+    """View or follow activity logs."""
+    logs = list_log_files()
+    target = None
+
+    if session_id:
+        target = next((l for l in logs if l["session_id"] == session_id), None)
+    else:
+        target = logs[0] if logs else None
+
+    if not target:
+        typer.echo("No log files found.")
+        raise typer.Exit(code=1)
+
+    log_path: Path = target["file_path"]
+
+    def print_last_lines():
+        for line in _tail_file_lines(log_path, lines=lines):
+            typer.echo(line)
+
+    print_last_lines()
+
+    if follow:
+        try:
+            with (gzip.open(log_path, "rt", encoding="utf-8") if log_path.suffix == ".gz" else open(log_path, "r", encoding="utf-8")) as f:
+                f.seek(0, os.SEEK_END)
+                while True:
+                    chunk = f.readline()
+                    if chunk:
+                        typer.echo(chunk.rstrip("\n"))
+                    else:
+                        time.sleep(0.5)
+        except KeyboardInterrupt:
+            return
 
 
 @app.command("task-list")
@@ -281,7 +401,7 @@ def task_complete(task_id: str = typer.Argument(..., help="Task ID to mark compl
         if task["id"] != task_id:
             continue
         task["status"] = "done"
-        task["completed_at"] = datetime.utcnow().isoformat() + "Z"
+        task["completed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         completed = True
         break
     if not completed:

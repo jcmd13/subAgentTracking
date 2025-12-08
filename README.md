@@ -202,6 +202,14 @@ cp src/core/* /path/to/your/project/src/core/
 
 # End-of-phase review
 "End Phase 1"
+
+# CLI (Phase 1)
+subagent init
+subagent status --json
+subagent task-add "Investigate backup failure" --priority 2
+subagent task-list --open
+subagent task-show task_20250101_120000_001
+subagent logs --follow
 ```
 
 ---
