@@ -151,14 +151,16 @@ def init() -> None:
 def status(
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
     watch: bool = typer.Option(False, "--watch", "-w", help="Continuously refresh status"),
-    interval: float = typer.Option(2.0, "--interval", "-i", help="Seconds between updates when watching"),
+    interval: float = typer.Option(None, "--interval", "-i", help="Seconds between updates when watching"),
 ) -> None:
     """
     Show current system status.
     """
-    cfg = core_config.get_config()
+    cli_cfg = _load_config()
+    cfg = _load_core_config()
+
     def render() -> None:
-        cfg_local = core_config.get_config(reload=True)
+        cfg_local = _load_core_config(reload=True)
         tasks = _load_tasks()
         logs = list_log_files()
         latest_log = logs[0]["file_path"] if logs else None
@@ -202,10 +204,11 @@ def status(
 
     if watch:
         try:
+            refresh = interval or cli_cfg["status"]["watch_interval"]
             while True:
                 typer.clear()
                 render()
-                time.sleep(interval)
+                time.sleep(refresh)
         except KeyboardInterrupt:
             return
     else:
@@ -264,6 +267,47 @@ def task_add(
     )
     _save_tasks(tasks)
     typer.echo(f"Created task {task_id}: {description}")
+
+
+@app.command("task-update")
+def task_update(
+    task_id: str = typer.Argument(..., help="Task ID"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="New status"),
+    priority: Optional[int] = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="Updated description"),
+) -> None:
+    """Update a task's status/priority/description."""
+    tasks = _load_tasks()
+    updated = False
+    for task in tasks:
+        if task.get("id") == task_id:
+            if status:
+                task["status"] = status
+            if priority is not None and 1 <= priority <= 5:
+                task["priority"] = priority
+            if description:
+                task["description"] = description
+            updated = True
+            break
+    if not updated:
+        typer.echo(f"Task not found: {task_id}")
+        raise typer.Exit(code=1)
+    _save_tasks(tasks)
+    typer.echo(f"Updated {task_id}")
+
+
+@app.command("task-complete")
+def task_complete(task_id: str = typer.Argument(..., help="Task ID")) -> None:
+    """Mark a task as done."""
+    tasks = _load_tasks()
+    for task in tasks:
+        if task.get("id") == task_id:
+            task["status"] = "done"
+            _save_tasks(tasks)
+            typer.echo(f"Completed {task_id}")
+            return
+    typer.echo(f"Task not found: {task_id}")
+    raise typer.Exit(code=1)
 
 
 @app.command("task-list")
