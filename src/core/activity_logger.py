@@ -1114,6 +1114,53 @@ def log_context_snapshot(
     return _write_event(event, "context_snapshot")
 
 
+def _normalize_validation_status(status: str) -> str:
+    """
+    Normalize validation status string to match ValidationStatus enum values.
+
+    Handles case-insensitive matching and common variations.
+
+    Args:
+        status: Input status string (e.g., "PASS", "Failed", "warn", etc.)
+
+    Returns:
+        Normalized status: "pass", "fail", "warning", or "skipped"
+
+    Examples:
+        >>> _normalize_validation_status("PASS")
+        'pass'
+        >>> _normalize_validation_status("Failed")
+        'fail'
+        >>> _normalize_validation_status("WARN")
+        'warning'
+    """
+    status_upper = str(status).upper().strip()
+
+    # Map to "pass"
+    if status_upper in ("PASS", "PASSED", "SUCCESS", "SUCCESSFUL", "OK", "TRUE", "1", "YES"):
+        return "pass"
+
+    # Map to "fail"
+    elif status_upper in ("FAIL", "FAILED", "FAILURE", "ERROR", "FALSE", "0", "NO"):
+        return "fail"
+
+    # Map to "warning"
+    elif status_upper in ("WARN", "WARNING", "WARNINGS"):
+        return "warning"
+
+    # Map to "skipped"
+    elif status_upper in ("SKIP", "SKIPPED", "SKIPPING", "NA", "N/A", "NONE", "UNKNOWN"):
+        return "skipped"
+
+    # If already lowercase valid value, return as-is
+    elif status.lower() in ("pass", "fail", "warning", "skipped"):
+        return status.lower()
+
+    # Default: treat unknown as skipped (safest option)
+    else:
+        return "skipped"
+
+
 def log_validation(
     agent: str,
     task: str,
@@ -1135,7 +1182,8 @@ def log_validation(
         task: Task being validated (e.g., "Task 1.1", "Unit tests")
         validation_type: Type of validation (e.g., "unit_test", "performance", "acceptance")
         checks: Individual checks and their results (dict mapping check name to status)
-        result: Overall validation result ("pass", "fail", "warning", "skipped")
+                Accepts any string - will be normalized to ValidationStatus enum values
+        result: Overall validation result (any string - will be normalized)
         failures: Optional list of failed checks
         warnings: Optional list of warning messages
         metrics: Optional performance metrics (e.g., test_coverage: 85%)
@@ -1149,13 +1197,27 @@ def log_validation(
         ...     agent="orchestrator",
         ...     task="Task 1.1",
         ...     validation_type="unit_test",
-        ...     checks={"schema_validation": "pass", "performance": "pass"},
-        ...     result="pass",
+        ...     checks={"schema_validation": "PASS", "performance": "pass"},
+        ...     result="PASS",
         ...     metrics={"test_coverage": 100}
         ... )
+
+    Note:
+        Status strings are case-insensitive and support common variations:
+        - "PASS", "passed", "success", "ok", "true" → "pass"
+        - "FAIL", "failed", "error", "false" → "fail"
+        - "WARN", "warning" → "warning"
+        - "SKIP", "skipped", "n/a" → "skipped"
     """
     if not _event_counter or not _session_id:
         initialize()
+
+    # Normalize all validation statuses
+    normalized_checks = {
+        check_name: _normalize_validation_status(check_status)
+        for check_name, check_status in checks.items()
+    }
+    normalized_result = _normalize_validation_status(result)
 
     event_id = _event_counter.next_id()
     parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
@@ -1170,8 +1232,8 @@ def log_validation(
         "agent": agent,
         "task": task,
         "validation_type": validation_type,
-        "checks": checks,
-        "result": result,
+        "checks": normalized_checks,
+        "result": normalized_result,
     }
 
     # Add optional fields
