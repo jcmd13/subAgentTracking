@@ -76,6 +76,7 @@ def _load_config() -> Dict[str, Any]:
     defaults: Dict[str, Any] = {
         "task_defaults": {"priority": 3},
         "status": {"watch_interval": 2.0},
+        "data_dir": str(SUBAGENT_ROOT),
     }
     if CONFIG_PATH.exists():
         try:
@@ -93,12 +94,18 @@ def _load_core_config(reload: bool = False) -> Config:
     Args:
         reload: Force reload of config module state
     """
+    cfg = _load_config()
+    os.environ.setdefault("SUBAGENT_DATA_DIR", cfg["data_dir"])
     return core_config.get_config(reload=reload)
 
 
 def _validate_cli_config(config_data: Dict[str, Any], defaults: Dict[str, Any]) -> Dict[str, Any]:
     """Validate and normalize CLI config values."""
     validated = defaults.copy()
+
+    data_dir = config_data.get("data_dir", defaults["data_dir"])
+    if isinstance(data_dir, str) and data_dir:
+        validated["data_dir"] = data_dir
 
     task_defaults = config_data.get("task_defaults", {}) or {}
     priority = task_defaults.get("priority", defaults["task_defaults"]["priority"])
@@ -142,9 +149,11 @@ def init() -> None:
     """
     Initialize local SubAgent directories (.subagent/).
     """
+    cfg = _load_config()
+    os.environ.setdefault("SUBAGENT_DATA_DIR", cfg["data_dir"])
     _ensure_subagent_dirs()
     _save_default_config()
-    typer.echo(f"Initialized {SUBAGENT_ROOT} directory structure.")
+    typer.echo(f"Initialized {Path(cfg['data_dir']).resolve()} directory structure.")
 
 
 @app.command()
@@ -231,6 +240,10 @@ def _render_task(task: dict, json_output: bool = False) -> None:
         typer.echo("  criteria:")
         for c in task.get("acceptance_criteria", []):
             typer.echo(f"    - {c}")
+    if task.get("context"):
+        typer.echo("  context:")
+        for c in task.get("context", []):
+            typer.echo(f"    - {c}")
     if task.get("created_at"):
         typer.echo(f"  created:   {task.get('created_at')}")
     if task.get("status"):
@@ -245,6 +258,7 @@ def task_add(
     deadline: Optional[str] = typer.Option(None, "--deadline", "-d", help="Deadline (ISO date/time or freeform)"),
     criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Acceptance criteria (repeatable)"),
     status: str = typer.Option("pending", "--status", "-s", help="Task status"),
+    context: List[str] = typer.Option([], "--context", "-c", help="Additional context/notes (repeatable)"),
 ) -> None:
     """
     Create a new task in .subagent/tasks/tasks.json.
@@ -263,6 +277,7 @@ def task_add(
             "acceptance_criteria": criteria,
             "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "status": status,
+            "context": context,
         }
     )
     _save_tasks(tasks)
@@ -275,6 +290,7 @@ def task_update(
     status: Optional[str] = typer.Option(None, "--status", "-s", help="New status"),
     priority: Optional[int] = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
     description: Optional[str] = typer.Option(None, "--description", "-d", help="Updated description"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ) -> None:
     """Update a task's status/priority/description."""
     tasks = _load_tasks()
@@ -293,7 +309,10 @@ def task_update(
         typer.echo(f"Task not found: {task_id}")
         raise typer.Exit(code=1)
     _save_tasks(tasks)
-    typer.echo(f"Updated {task_id}")
+    if json_output:
+        typer.echo(json.dumps({"updated": task_id}, indent=2))
+    else:
+        typer.echo(f"Updated {task_id}")
 
 
 @app.command("task-complete")
@@ -403,6 +422,38 @@ def logs(
                         time.sleep(0.5)
         except KeyboardInterrupt:
             return
+
+
+@app.command("config-show")
+def config_show(json_output: bool = typer.Option(False, "--json", help="Output JSON")) -> None:
+    """Show effective CLI + core config."""
+    cli_cfg = _load_config()
+    core_cfg = _load_core_config(reload=True)
+    payload = {
+        "cli": cli_cfg,
+        "core": {
+            "project_root": str(core_cfg.project_root),
+            "data_dir": str(core_cfg.claude_dir),
+            "logs_dir": str(core_cfg.logs_dir),
+            "state_dir": str(core_cfg.state_dir),
+            "analytics_dir": str(core_cfg.analytics_dir),
+            "credentials_dir": str(core_cfg.credentials_dir),
+            "backup_enabled": getattr(core_cfg, "backup_enabled", False),
+            "analytics_enabled": getattr(core_cfg, "analytics_enabled", False),
+        },
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(f"Project root: {payload['core']['project_root']}")
+        typer.echo(f"Data dir:     {payload['core']['data_dir']}")
+        typer.echo(f"Logs dir:     {payload['core']['logs_dir']}")
+        typer.echo(f"State dir:    {payload['core']['state_dir']}")
+        typer.echo(f"Analytics:    {payload['core']['analytics_dir']}")
+        typer.echo(f"Creds:        {payload['core']['credentials_dir']}")
+        typer.echo(f"Backup:       {payload['core']['backup_enabled']}")
+        typer.echo(f"Analytics DB: {payload['core']['analytics_enabled']}")
+        typer.echo(f"CLI defaults: priority={cli_cfg['task_defaults']['priority']}, watch_interval={cli_cfg['status']['watch_interval']}")
 
 
 @app.command("task-list")
