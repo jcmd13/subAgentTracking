@@ -34,6 +34,7 @@ import json
 import gzip
 import threading
 import queue
+import contextvars
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
@@ -250,9 +251,23 @@ class ThreadedJSONLWriter:
 _writer: Optional[ThreadedJSONLWriter] = None
 _session_id: Optional[str] = None
 _event_counter: Optional[EventCounter] = None
-_parent_event_stack: List[str] = []
+# Thread-safe parent event tracking using ContextVars
+_parent_event_var: contextvars.ContextVar[List[str]] = contextvars.ContextVar(
+    'parent_event_stack'
+)
 _initialized = False
 _init_lock = threading.Lock()
+
+
+def _get_parent_stack() -> List[str]:
+    """Get the parent event stack for the current context (thread-safe)."""
+    try:
+        stack = _parent_event_var.get()
+    except LookupError:
+        # First access in this context, create a new stack
+        stack = []
+        _parent_event_var.set(stack)
+    return stack
 
 
 # ============================================================================
@@ -675,7 +690,7 @@ def log_agent_invocation(
         initialize()
 
     event_id = _event_counter.next_id()
-    parent_id = _parent_event_stack[-1] if _parent_event_stack else None
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
     # Build event matching AgentInvocationEvent schema (flat structure)
     event = {
@@ -751,7 +766,7 @@ def log_tool_usage(
         initialize()
 
     event_id = _event_counter.next_id()
-    parent_id = _parent_event_stack[-1] if _parent_event_stack else None
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
     # Build event matching ToolUsageEvent schema (flat structure)
     event = {
@@ -830,7 +845,7 @@ def log_file_operation(
         initialize()
 
     event_id = _event_counter.next_id()
-    parent_id = _parent_event_stack[-1] if _parent_event_stack else None
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
     # Build event matching FileOperationEvent schema (flat structure)
     event = {
@@ -908,7 +923,7 @@ def log_decision(
         initialize()
 
     event_id = _event_counter.next_id()
-    parent_id = _parent_event_stack[-1] if _parent_event_stack else None
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
     # Build event matching DecisionEvent schema (flat structure)
     event = {
@@ -985,7 +1000,7 @@ def log_error(
         initialize()
 
     event_id = _event_counter.next_id()
-    parent_id = _parent_event_stack[-1] if _parent_event_stack else None
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
     # Build event matching ErrorEvent schema (flat structure)
     event = {
@@ -1138,7 +1153,7 @@ def log_validation(
         initialize()
 
     event_id = _event_counter.next_id()
-    parent_id = _parent_event_stack[-1] if _parent_event_stack else None
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
 
     # Build event matching ValidationEvent schema (flat structure)
     event = {
@@ -1211,8 +1226,8 @@ def tool_usage_context(
 
     try:
         # Push event onto parent stack (will be filled in after logging)
-        placeholder_idx = len(_parent_event_stack)
-        _parent_event_stack.append(None)
+        placeholder_idx = len(_get_parent_stack())
+        _get_parent_stack().append(None)
 
         yield event_id  # Yield before logging (event_id not yet created)
 
@@ -1238,11 +1253,11 @@ def tool_usage_context(
         )
 
         # Update parent stack with actual event ID
-        if placeholder_idx < len(_parent_event_stack):
-            _parent_event_stack[placeholder_idx] = event_id
+        if placeholder_idx < len(_get_parent_stack()):
+            _get_parent_stack()[placeholder_idx] = event_id
 
             # Pop from stack
-            _parent_event_stack.pop()
+            _get_parent_stack().pop()
 
 
 @contextmanager
@@ -1275,11 +1290,11 @@ def agent_invocation_context(
     )
 
     # Push onto parent stack
-    _parent_event_stack.append(event_id)
+    _get_parent_stack().append(event_id)
 
     try:
         yield event_id
     finally:
         # Pop from parent stack
-        if _parent_event_stack and _parent_event_stack[-1] == event_id:
-            _parent_event_stack.pop()
+        if _get_parent_stack() and _get_parent_stack()[-1] == event_id:
+            _get_parent_stack().pop()

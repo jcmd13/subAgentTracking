@@ -26,7 +26,7 @@ Performance Targets:
 import re
 from typing import Dict, Any, List, Optional, Tuple, Set
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ class ContextOptimizer:
             >>> print(f"Saved {result.savings_percent:.1f}%")
             >>> print(f"Optimized context: {result.optimized_context[:100]}...")
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         # Analyze context
         analysis = self.analyze_context(context)
@@ -218,7 +218,7 @@ class ContextOptimizer:
         self.stats["total_tokens_saved"] += savings_tokens
         self.stats["total_original_tokens"] += original_tokens
 
-        optimization_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        optimization_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         self.stats["optimization_times"].append(optimization_time)
 
         logger.info(

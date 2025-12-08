@@ -20,7 +20,7 @@ Accuracy: ±2% of actual API costs
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import logging
 
@@ -411,7 +411,7 @@ class CostTrackerSubscriber(EventHandler):
         event_bus = get_event_bus()
         event = Event(
             event_type=COST_TRACKED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload=cost_details,
             trace_id=original_event.trace_id,
             session_id=original_event.session_id
@@ -423,7 +423,7 @@ class CostTrackerSubscriber(EventHandler):
         event_bus = get_event_bus()
         event = Event(
             event_type=COST_BUDGET_WARNING,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload=alert,
             trace_id=original_event.trace_id,
             session_id=original_event.session_id

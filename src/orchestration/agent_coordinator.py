@@ -23,7 +23,7 @@ Performance:
 import asyncio
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Callable, Set
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import logging
 
@@ -286,7 +286,7 @@ class AgentCoordinator:
         workflow = self.workflows[workflow_id]
 
         # Mark workflow as started
-        workflow.started_at = datetime.utcnow()
+        workflow.started_at = datetime.now(timezone.utc)
         workflow.status = "running"
         self.stats["workflows_executed"] += 1
 
@@ -298,7 +298,7 @@ class AgentCoordinator:
             results = await self._execute_tasks_parallel(workflow)
 
             # Mark workflow as completed
-            workflow.completed_at = datetime.utcnow()
+            workflow.completed_at = datetime.now(timezone.utc)
             workflow.status = "completed"
 
             # Publish workflow completed event
@@ -319,7 +319,7 @@ class AgentCoordinator:
             }
 
         except Exception as e:
-            workflow.completed_at = datetime.utcnow()
+            workflow.completed_at = datetime.now(timezone.utc)
             workflow.status = "failed"
 
             logger.error(f"Workflow '{workflow_id}' failed: {e}", exc_info=True)
@@ -418,7 +418,7 @@ class AgentCoordinator:
             Exception: If agent execution fails
         """
         task.status = AgentStatus.RUNNING
-        task.started_at = datetime.utcnow()
+        task.started_at = datetime.now(timezone.utc)
         self.stats["agents_executed"] += 1
 
         # Get agent handler
@@ -446,7 +446,7 @@ class AgentCoordinator:
             context = self._build_agent_context(workflow, task)
             result = await handler(task.task_spec, context)
 
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
 
             # Track phase time
             execution_time = (task.completed_at - task.started_at).total_seconds()
@@ -458,7 +458,7 @@ class AgentCoordinator:
             return result
 
         except Exception as e:
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
             task.error = str(e)
 
             # Publish agent failed event
@@ -501,7 +501,7 @@ class AgentCoordinator:
 
         event = Event(
             event_type=event_type,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload={
                 "workflow_id": workflow.workflow_id,
                 "task_count": len(workflow.tasks),
@@ -540,7 +540,7 @@ class AgentCoordinator:
 
         event = Event(
             event_type=event_type,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload=payload,
             trace_id=workflow.workflow_id,
             session_id=workflow.metadata.get("session_id", "unknown")

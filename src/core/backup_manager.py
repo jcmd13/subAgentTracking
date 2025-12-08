@@ -8,7 +8,7 @@ import random
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
-from googleapiclient.http import MediaIoBaseUploader
+from googleapiclient.http import MediaIoBaseUpload
 from src.core.config import get_config
 
 # Setup logging
@@ -35,9 +35,7 @@ class BackupManager:
             Google Drive API service object or None if initialization fails.
         """
         creds = None
-        token_path = self.config.get(
-            "google_drive_token_path", ".claude/credentials/google_drive_token.json"
-        )
+        token_path = self.config.get_token_path("google_drive")
 
         if os.path.exists(token_path):
             # Load existing token if available
@@ -148,9 +146,10 @@ class BackupManager:
 
         filename = os.path.basename(file_path)
 
-        # Get session ID from config if not provided
+        # Get session ID from activity logger if not provided
         if not session_id:
-            session_id = self.config.get("current_session_id", "unknown_session")
+            from src.core import activity_logger
+            session_id = activity_logger.get_current_session_id() or "unknown_session"
 
         # Create nested folder for session
         session_folder_id = self.get_or_create_folder(
@@ -167,9 +166,9 @@ class BackupManager:
             sha256_hash = self.calculate_sha256(file_path)
             logging.info(f"File hash (SHA256): {sha256_hash}")
 
-            # Create a MediaIoBaseUploader instance
+            # Create a MediaIoBaseUpload instance
             with open(file_path, "rb") as file_fd:
-                media = MediaIoBaseUploader(
+                media = MediaIoBaseUpload(
                     fd=file_fd,
                     mimetype=mime_type,
                     chunksize=1024 * 1024,  # 1MB chunk size
@@ -316,6 +315,121 @@ class BackupManager:
         except Exception as e:
             logging.error(f"Error uploading analytics database: {e}")
             return None
+
+    def is_available(self) -> bool:
+        """Check if Google Drive backup is configured and accessible.
+
+        Returns:
+            True if backup is available, False otherwise.
+        """
+        if not self.service or not self.folder_id:
+            return False
+        try:
+            return self.test_connection()
+        except Exception:
+            return False
+
+    def authenticate(self) -> bool:
+        """Authenticate with Google Drive.
+
+        Returns:
+            True if authentication successful, False otherwise.
+        """
+        if not self.service:
+            # Try to reinitialize the service
+            self.service = self.get_drive_service()
+            if self.service and not self.folder_id:
+                self.folder_id = self.get_or_create_folder()
+
+        if not self.service:
+            logging.error("Authentication failed: Unable to initialize Google Drive service")
+            return False
+
+        try:
+            # Test the connection to verify authentication
+            return self.test_connection()
+        except Exception as e:
+            logging.error(f"Authentication failed: {e}")
+            return False
+
+    def backup_session(
+        self,
+        session_id: str,
+        phase: str = None,
+        compress: bool = True
+    ) -> dict:
+        """Backup an entire session including logs and snapshots.
+
+        Args:
+            session_id: The session identifier
+            phase: Backup phase (checkpoint, shutdown, error) - optional
+            compress: Whether to compress files before upload
+
+        Returns:
+            Dictionary with backup results:
+            {
+                'success': bool,
+                'file_id': Optional[str],
+                'error': Optional[str],
+                'files_uploaded': List[str]
+            }
+        """
+        from datetime import datetime
+
+        if not self.is_available():
+            return {
+                'success': False,
+                'file_id': None,
+                'error': 'Google Drive not available',
+                'files_uploaded': []
+            }
+
+        phase = phase or "checkpoint"
+        backup_id = f"backup_{session_id}_{phase}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        files_uploaded = []
+
+        try:
+            # Upload activity log
+            log_file = self.config.logs_dir / f"{session_id}.jsonl"
+            if log_file.exists():
+                file_id = self.upload_activity_log(str(log_file), session_id)
+                if file_id:
+                    files_uploaded.append(f"activity_log:{file_id}")
+                    logging.info(f"Uploaded activity log for session {session_id}")
+
+            # Upload snapshots from state directory
+            # Snapshots are named like: session_20251206_143022_snap001.json
+            snapshot_pattern = f"{session_id}_snap*.json"
+            for snapshot_file in self.config.state_dir.glob(snapshot_pattern):
+                file_id = self.upload_file(str(snapshot_file), "application/json", session_id)
+                if file_id:
+                    files_uploaded.append(f"snapshot:{file_id}")
+            if any("snapshot:" in f for f in files_uploaded):
+                logging.info(f"Uploaded snapshots for session {session_id}")
+
+            if files_uploaded:
+                return {
+                    'success': True,
+                    'file_id': backup_id,
+                    'error': None,
+                    'files_uploaded': files_uploaded
+                }
+            else:
+                return {
+                    'success': False,
+                    'file_id': None,
+                    'error': 'No files found to backup',
+                    'files_uploaded': []
+                }
+
+        except Exception as e:
+            logging.error(f"Session backup failed: {e}")
+            return {
+                'success': False,
+                'file_id': None,
+                'error': str(e),
+                'files_uploaded': files_uploaded
+            }
 
     def test_connection(self) -> bool:
         """Tests the Google Drive connection.

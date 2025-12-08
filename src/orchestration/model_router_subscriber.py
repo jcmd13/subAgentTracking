@@ -20,7 +20,7 @@ Event Flow:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import logging
 
@@ -147,7 +147,7 @@ class ModelRouterSubscriber(EventHandler):
             "complexity_score": metadata["complexity_score"],
             "routing_reason": metadata["routing_reason"],
             "budget_constrained": budget_constrained,
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.now(timezone.utc)
         }
 
         # Store routing decision
@@ -269,7 +269,7 @@ class ModelRouterSubscriber(EventHandler):
 
         event = Event(
             event_type=MODEL_SELECTED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload={
                 "model": model,
                 "tier": tier,
@@ -310,7 +310,7 @@ class ModelRouterSubscriber(EventHandler):
 
         event = Event(
             event_type=MODEL_TIER_UPGRADE,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload={
                 "agent": agent_name,
                 "current_tier": current_tier,

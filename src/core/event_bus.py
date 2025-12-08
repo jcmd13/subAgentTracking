@@ -15,7 +15,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Any
 import uuid
 import logging
@@ -85,7 +85,7 @@ class EventBus:
         >>> bus.subscribe("agent.invoked", my_handler)
         >>> await bus.publish_async(Event(
         ...     event_type="agent.invoked",
-        ...     timestamp=datetime.utcnow(),
+        ...     timestamp=datetime.now(timezone.utc),
         ...     payload={"agent": "test"},
         ...     trace_id="trace-123",
         ...     session_id="session-456"
@@ -152,7 +152,7 @@ class EventBus:
         Example:
             >>> bus.publish(Event(
             ...     event_type="agent.invoked",
-            ...     timestamp=datetime.utcnow(),
+            ...     timestamp=datetime.now(timezone.utc),
             ...     payload={"agent": "test"},
             ...     trace_id="trace-123",
             ...     session_id="session-456"
@@ -177,7 +177,7 @@ class EventBus:
         Example:
             >>> await bus.publish_async(Event(...))
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         async with self._lock:
             self._event_count += 1
@@ -198,7 +198,7 @@ class EventBus:
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # Performance monitoring
-        duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+        duration_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         if duration_ms > 5:
             logger.warning(
                 f"Event dispatch took {duration_ms:.2f}ms (target: <5ms) "

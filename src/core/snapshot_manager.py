@@ -30,7 +30,7 @@ import json
 import gzip
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 import subprocess
 
@@ -233,7 +233,7 @@ def take_snapshot(
         _last_token_count = token_count
 
     # Get current timestamp
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     # Get total event count
     total_events = activity_logger.get_event_count()
@@ -244,8 +244,8 @@ def take_snapshot(
         # Parse session_id to get start time (format: session_YYYYMMDD_HHMMSS)
         if session_id.startswith("session_"):
             date_str = session_id.replace("session_", "")
-            start_dt = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
-            now_dt = datetime.utcnow()
+            start_dt = datetime.strptime(date_str, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+            now_dt = datetime.now(timezone.utc)
             elapsed_time_seconds = int((now_dt - start_dt).total_seconds())
     except (ValueError, AttributeError):
         pass
@@ -467,7 +467,7 @@ def cleanup_old_snapshots(retention_days: Optional[int] = None) -> int:
         retention_days = cfg.snapshot_retention_days
 
     state_dir = cfg.state_dir
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     deleted_count = 0
 
     # Find all snapshot files
@@ -523,7 +523,7 @@ def create_handoff_summary(
     if session_id is None:
         session_id = activity_logger.get_current_session_id()
 
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     # Get latest snapshot
     latest_snapshot = None

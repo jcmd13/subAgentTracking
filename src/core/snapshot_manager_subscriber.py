@@ -15,7 +15,7 @@ Migration Strategy:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import logging
 
@@ -173,7 +173,7 @@ class SnapshotManagerSubscriber(EventHandler):
         event_bus = get_event_bus()
         event = Event(
             event_type=SNAPSHOT_CREATED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload={
                 "snapshot_id": snapshot_id,
                 "trigger": trigger,
@@ -196,7 +196,7 @@ class SnapshotManagerSubscriber(EventHandler):
         event_bus = get_event_bus()
         event = Event(
             event_type=SNAPSHOT_FAILED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             payload={
                 "trigger": "auto",
                 "error_msg": error_msg,
