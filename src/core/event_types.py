@@ -15,6 +15,8 @@ import jsonschema
 from typing import Dict, Any, List
 from enum import Enum
 
+from src.core.exceptions import EventValidationError
+
 # ============================================================================
 # Event Type Constants
 # ============================================================================
@@ -863,10 +865,7 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
 # ============================================================================
 # Validation Functions
 # ============================================================================
-
-class EventValidationError(Exception):
-    """Raised when event payload validation fails"""
-    pass
+# Note: EventValidationError is now imported from src.core.exceptions
 
 
 def validate_event_payload(event_type: str, payload: Dict[str, Any]) -> bool:
