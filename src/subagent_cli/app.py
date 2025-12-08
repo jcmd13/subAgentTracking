@@ -2,7 +2,7 @@ import gzip
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -11,6 +11,7 @@ import yaml
 
 from src.core import config as core_config
 from src.core.activity_logger import list_log_files
+from src.core.activity_logger import get_current_session_id
 
 app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
 
@@ -124,6 +125,8 @@ def status(
         tasks = _load_tasks()
         logs = list_log_files()
         latest_log = logs[0]["file_path"] if logs else None
+        current_session = get_current_session_id()
+        snapshot_count = len(list(cfg_local.state_dir.glob("session_*_snap*.json*")))
         payload = {
             "project_root": str(cfg_local.project_root),
             "logs_dir": str(cfg_local.logs_dir),
@@ -131,6 +134,8 @@ def status(
             "backup_enabled": getattr(cfg_local, "backup_enabled", False),
             "analytics_enabled": getattr(cfg_local, "analytics_enabled", False),
             "session_id_format": getattr(cfg_local, "session_id_format", "session_%Y%m%d_%H%M%S"),
+            "current_session": current_session,
+            "snapshots": snapshot_count,
             "tasks": {
                 "count": len(tasks),
                 "open": len([t for t in tasks if t.get("status") != "done"]),
@@ -150,6 +155,8 @@ def status(
             typer.echo(f"Backup enabled:    {payload['backup_enabled']}")
             typer.echo(f"Analytics enabled: {payload['analytics_enabled']}")
             typer.echo(f"Session ID format: {payload['session_id_format']}")
+            typer.echo(f"Current session:   {payload['current_session'] or 'none'}")
+            typer.echo(f"Snapshots:         {payload['snapshots']}")
             typer.echo(f"Tasks:             {payload['tasks']['count']} total, {payload['tasks']['open']} open")
             if payload["tasks"]["latest"]:
                 typer.echo(f"Latest task:       {payload['tasks']['latest']}")
@@ -175,6 +182,7 @@ def task_add(
     task_type: Optional[str] = typer.Option(None, "--type", "-t", help="Task type/category"),
     deadline: Optional[str] = typer.Option(None, "--deadline", "-d", help="Deadline (ISO date/time or freeform)"),
     criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Acceptance criteria (repeatable)"),
+    status: str = typer.Option("pending", "--status", "-s", help="Task status"),
 ) -> None:
     """
     Create a new task in .subagent/tasks/tasks.json.
@@ -192,7 +200,7 @@ def task_add(
             "deadline": deadline,
             "acceptance_criteria": criteria,
             "created_at": datetime.utcnow().isoformat() + "Z",
-            "status": "pending",
+            "status": status,
         }
     )
     _save_tasks(tasks)
@@ -216,7 +224,71 @@ def task_list(json_output: bool = typer.Option(False, "--json", help="Output JSO
         summary = f"{task['id']}: {task['description']} [{task.get('status','pending')}] (p{task.get('priority',3)})"
         if task.get("deadline"):
             summary += f" due {task['deadline']}"
+        if task.get("type"):
+            summary += f" type={task['type']}"
         typer.echo(summary)
+
+
+@app.command("task-update")
+def task_update(
+    task_id: str = typer.Argument(..., help="Task ID to update"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="New description"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="New status"),
+    priority: Optional[int] = typer.Option(None, "--priority", "-p", help="New priority"),
+    task_type: Optional[str] = typer.Option(None, "--type", "-t", help="New type/category"),
+    deadline: Optional[str] = typer.Option(None, "--deadline", help="New deadline"),
+    criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Replace acceptance criteria (repeatable)"),
+) -> None:
+    """
+    Update an existing task.
+    """
+    _ensure_subagent_dirs()
+    tasks = _load_tasks()
+    updated = False
+    for task in tasks:
+        if task["id"] != task_id:
+            continue
+        if description is not None:
+            task["description"] = description
+        if status is not None:
+            task["status"] = status
+        if priority is not None:
+            task["priority"] = priority
+        if task_type is not None:
+            task["type"] = task_type
+        if deadline is not None:
+            task["deadline"] = deadline
+        if criteria:
+            task["acceptance_criteria"] = criteria
+        updated = True
+        break
+    if not updated:
+        typer.echo(f"Task {task_id} not found.")
+        raise typer.Exit(code=1)
+    _save_tasks(tasks)
+    typer.echo(f"Updated task {task_id}.")
+
+
+@app.command("task-complete")
+def task_complete(task_id: str = typer.Argument(..., help="Task ID to mark complete")) -> None:
+    """
+    Mark a task as completed.
+    """
+    _ensure_subagent_dirs()
+    tasks = _load_tasks()
+    completed = False
+    for task in tasks:
+        if task["id"] != task_id:
+            continue
+        task["status"] = "done"
+        task["completed_at"] = datetime.utcnow().isoformat() + "Z"
+        completed = True
+        break
+    if not completed:
+        typer.echo(f"Task {task_id} not found.")
+        raise typer.Exit(code=1)
+    _save_tasks(tasks)
+    typer.echo(f"Marked task {task_id} as done.")
 
 
 @app.command("task-show")
@@ -237,6 +309,8 @@ def logs(
     follow: bool = typer.Option(False, "--follow", "-f", help="Tail the latest log"),
     count: int = typer.Option(20, "--count", "-n", help="Lines to show when not following"),
     task_id: Optional[str] = typer.Option(None, "--task-id", help="Filter log lines by task id"),
+    event_type: Optional[str] = typer.Option(None, "--event-type", "-e", help="Filter by event_type"),
+    since: Optional[str] = typer.Option(None, "--since", help="Filter events at/after ISO timestamp"),
 ) -> None:
     """
     Show or tail the latest activity log.
@@ -253,7 +327,7 @@ def logs(
         _tail_file(latest)
     else:
         lines = _read_last_lines(latest, count)
-        for line in _filter_lines_by_task(lines, task_id):
+        for line in _filter_lines(lines, task_id, event_type, since):
             typer.echo(line.rstrip("\n"))
 
 
@@ -275,7 +349,7 @@ def _tail_file(path: Path) -> None:
             while True:
                 line = f.readline()
                 if line:
-                    for filtered in _filter_lines_by_task([line], None):
+                    for filtered in _filter_lines([line], None, None, None):
                         typer.echo(filtered.rstrip("\n"))
                 else:
                     time.sleep(1)
@@ -283,9 +357,25 @@ def _tail_file(path: Path) -> None:
             return
 
 
-def _filter_lines_by_task(lines: list[str], task_id: Optional[str]) -> list[str]:
-    if not task_id:
+def _parse_iso(ts: str) -> Optional[datetime]:
+    try:
+        if ts.endswith("Z"):
+            ts = ts.replace("Z", "+00:00")
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def _filter_lines(
+    lines: list[str],
+    task_id: Optional[str],
+    event_type: Optional[str],
+    since: Optional[str],
+) -> list[str]:
+    if not any([task_id, event_type, since]):
         return lines
+
+    since_dt = _parse_iso(since) if since else None
 
     filtered = []
     for line in lines:
@@ -293,8 +383,16 @@ def _filter_lines_by_task(lines: list[str], task_id: Optional[str]) -> list[str]
             event = json.loads(line)
         except Exception:
             continue
-        if event.get("task") == task_id or event.get("task_id") == task_id:
-            filtered.append(line)
+        if task_id and not (event.get("task") == task_id or event.get("task_id") == task_id):
+            continue
+        if event_type and event.get("event_type") != event_type:
+            continue
+        if since_dt:
+            ts = event.get("timestamp")
+            ts_dt = _parse_iso(ts) if ts else None
+            if ts_dt and ts_dt < since_dt:
+                continue
+        filtered.append(line)
     return filtered
 
 
