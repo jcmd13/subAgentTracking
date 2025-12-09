@@ -117,7 +117,10 @@ def load_provider_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
             data = yaml.safe_load(path.read_text()) or {}
             providers_cfg = data.get("providers", {})
             if isinstance(providers_cfg, dict):
+                order = providers_cfg.get("order")
                 cfg["providers"].update(providers_cfg)
+                if order is not None:
+                    cfg["providers"]["order"] = order
         except Exception:
             # Fallback to defaults on parse errors
             pass
