@@ -210,6 +210,18 @@ subagent task-add "Investigate backup failure" --priority 2
 subagent task-list --open
 subagent task-show task_20250101_120000_001
 subagent logs --follow
+subagent session-start --note "morning shift"
+subagent session-list --json
+subagent session-end --status completed
+
+# Provider config (Phase 3 stubs)
+# Edit .subagent/config/providers.yaml to set order/models:
+# providers:
+#   order: [ollama, claude, gemini]
+#   ollama: {model: llama3}
+#   claude: {model: claude-sonnet-3.5}
+#   gemini: {model: gemini-2.0-pro}
+# Model router can build a fallback mux from this config.
 ```
 
 ---
