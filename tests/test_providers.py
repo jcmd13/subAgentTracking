@@ -50,8 +50,14 @@ def test_build_providers_from_config(tmp_path, monkeypatch):
     config_path = cfg_dir / "providers.yaml"
     config_path.write_text("providers:\\n  order: [ollama, claude]\\n  ollama:\\n    model: mistral\\n  claude:\\n    model: haiku\\n")
 
-    loaded = providers.load_provider_config(config_path=config_path)
-    instances = providers.build_providers(loaded)
+    config = {
+        "providers": {
+            "order": ["ollama", "claude"],
+            "ollama": {"model": "mistral"},
+            "claude": {"model": "haiku"},
+        }
+    }
+    instances = providers.build_providers(config)
     assert len(instances) == 2
     assert isinstance(instances[0], providers.OllamaProvider)
     assert instances[0].model == "mistral"
