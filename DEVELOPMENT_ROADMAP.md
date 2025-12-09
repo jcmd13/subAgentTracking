@@ -20,9 +20,9 @@
 
 ## Current Sprint
 
-### Sprint Status: Phase 1, Week 1 (In Progress)
+### Sprint Status: Phase 3, Week 1 (In Progress)
 
-**Sprint Goal**: Complete core implementation and achieve 70% test coverage
+**Sprint Goal**: Begin provider adapters after completing CLI (Phase 1) and Persistent State (Phase 2)
 
 **Current Blockers**:
 - No core Python modules implemented yet (src/core/ is empty)
@@ -38,11 +38,11 @@
 **Tasks**:
 1. Create project structure
    - [ ] Create `src/core/__init__.py`
-   - [ ] Create `.claude/logs/` directory with `.gitkeep`
-   - [ ] Create `.claude/state/` directory with `.gitkeep`
-   - [ ] Create `.claude/analytics/` directory with `.gitkeep`
-   - [ ] Create `.claude/credentials/` directory with `.gitkeep`
-   - [ ] Create `.claude/handoffs/` directory with `.gitkeep`
+   - [ ] Create `.subagent/logs/` directory with `.gitkeep` (legacy `.claude/` supported)
+   - [ ] Create `.subagent/state/` directory with `.gitkeep`
+   - [ ] Create `.subagent/analytics/` directory with `.gitkeep`
+   - [ ] Create `.subagent/credentials/` directory with `.gitkeep`
+   - [ ] Create `.subagent/handoffs/` directory with `.gitkeep`
    - [ ] Update `.gitignore` to exclude sensitive files
 
 2. Implement `src/core/config.py`
@@ -266,7 +266,7 @@
 1. Create `setup_google_drive.py`
    - [ ] Google Cloud Console instructions (embedded in script)
    - [ ] OAuth 2.0 flow (desktop app)
-   - [ ] Token storage (`.claude/credentials/google_drive_token.json`)
+   - [ ] Token storage (`.subagent/credentials/google_drive_token.json`, legacy `.claude/` supported)
    - [ ] Credential validation
    - [ ] Test upload to verify setup
    - **Acceptance Criteria**: Setup takes <15 minutes for new user
