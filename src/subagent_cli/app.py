@@ -14,6 +14,7 @@ from src.core import config as core_config
 from src.core.activity_logger import list_log_files
 from src.core.activity_logger import get_current_session_id
 from src.core.config import Config
+from src.core import session_manager
 
 app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
 
@@ -154,6 +155,45 @@ def init() -> None:
     _ensure_subagent_dirs()
     _save_default_config()
     typer.echo(f"Initialized {Path(cfg['data_dir']).resolve()} directory structure.")
+
+
+@app.command("session-start")
+def session_start(
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Custom session ID"),
+    note: Optional[str] = typer.Option(None, "--note", "-n", help="Metadata note"),
+) -> None:
+    """Start a new session and persist metadata."""
+    meta = {\"note\": note} if note else {}
+    sid = session_manager.start_session(session_id=session_id, metadata=meta)
+    typer.echo(f\"Started session: {sid}\")
+
+
+@app.command("session-end")
+def session_end(
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to end"),
+    status: str = typer.Option("completed", "--status", "-s", help="Final status"),
+    note: Optional[str] = typer.Option(None, "--note", "-n", help="Notes"),
+) -> None:
+    \"\"\"End a session and mark status.\"\"\"
+    result = session_manager.end_session(session_id=session_id, status=status, notes=note)
+    if not result.get(\"success\"):
+        typer.echo(f\"Failed to end session: {result.get('error')}\")
+        raise typer.Exit(code=1)
+    typer.echo(f\"Ended session: {result['session_id']}\")
+
+
+@app.command("session-list")
+def session_list(json_output: bool = typer.Option(False, "--json", help="Output JSON")) -> None:
+    \"\"\"List persisted sessions.\"\"\"
+    sessions = session_manager.list_sessions()
+    if json_output:
+        typer.echo(json.dumps(sessions, indent=2))
+    else:
+        if not sessions:
+            typer.echo(\"No sessions found.\")
+            return
+        for s in sessions:
+            typer.echo(f\"{s.get('session_id')} [{s.get('status')}] started={s.get('started_at')} ended={s.get('ended_at')}\")
 
 
 @app.command()
