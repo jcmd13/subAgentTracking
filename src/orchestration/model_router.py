@@ -180,10 +180,10 @@ class ModelRouter:
         try:
             with open(self.config_path, 'r') as f:
                 config = yaml.safe_load(f)
-        return config or {}
-    except Exception as e:
-        logger.error(f"Failed to load model tiers config: {e}")
-        return {}
+                return config or {}
+        except Exception as e:
+            logger.error(f"Failed to load model tiers config: {e}")
+            return {}
 
     def get_provider_mux(self, provider_config_path: Optional[Path] = None):
         """
