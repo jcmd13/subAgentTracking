@@ -126,9 +126,15 @@ class TaskComplexityScorer:
         Returns:
             True if has failed 2+ times with weak tier
         """
-        # TODO: Query analytics DB for historical failures
-        # For now, return False (no historical data)
-        return False
+        if not self.analytics_db:
+            return False
+        try:
+            failures = self.analytics_db.query_error_patterns(
+                agent_name=None, error_type="weak_tier_failure", task_type=task_type
+            )
+            return len(failures) >= 2
+        except Exception:
+            return False
 
 
 class ModelRouter:
