@@ -47,13 +47,6 @@ def test_fallback_manager_raises_when_all_fail():
 def test_build_providers_from_config(tmp_path, monkeypatch):
     cfg_dir = tmp_path / ".subagent" / "config"
     cfg_dir.mkdir(parents=True)
-    cfg = {
-        "providers": {
-            "order": ["ollama", "claude"],
-            "ollama": {"model": "mistral"},
-            "claude": {"model": "haiku"},
-        }
-    }
     config_path = cfg_dir / "providers.yaml"
     config_path.write_text("providers:\\n  order: [ollama, claude]\\n  ollama:\\n    model: mistral\\n  claude:\\n    model: haiku\\n")
 
