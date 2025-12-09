@@ -547,6 +547,15 @@ def initialize(session_id: Optional[str] = None):
 
                 print(f"Warning: Log rotation on startup failed: {e}", file=sys.stderr)
 
+        # Persist session pointer if session_manager is available (best-effort)
+        try:
+            from src.core import session_manager as _sess
+
+            _sess.start_session(session_id=_session_id, metadata={"source": "activity_logger"})
+        except Exception:
+            # Optional dependency; ignore if unavailable
+            pass
+
         _initialized = True
 
 
