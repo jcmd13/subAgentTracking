@@ -129,7 +129,9 @@ def build_providers(config: Optional[Dict[str, Any]] = None) -> List[BaseProvide
     """Build provider instances from config dict."""
     cfg = config or load_provider_config()
     providers_cfg = cfg.get("providers", {})
-    order = providers_cfg.get("order", DEFAULT_ORDER)
+    order = providers_cfg.get("order")
+    if not isinstance(order, list):
+        order = DEFAULT_ORDER
 
     instances: List[BaseProvider] = []
     for name in order:
