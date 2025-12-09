@@ -18,7 +18,7 @@ class AnthropicProvider(BaseProvider):
     def generate(self, prompt: str) -> str:
         if not self.api_key:
             raise ProviderError("Anthropic API key missing")
-        # Stubbed offline response
+        # TODO: call Anthropic API. Stub for offline tests.
         return f"[anthropic:{self.model}] {prompt}"
 
 

@@ -27,6 +27,6 @@ print(mux.generate("hello"))
   - `src/core/providers_anthropic.py`
   - `src/core/providers_ollama.py`
   - `src/core/providers_gemini.py`
-- Add config-driven provider selection and keys.
+- Add config-driven provider selection and keys (keys/endpoints via `.subagent/config/providers.yaml`).
 - Add retry/backoff and structured errors.
 - Integration tests hitting mocked APIs.

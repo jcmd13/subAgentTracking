@@ -15,6 +15,7 @@ class OllamaAPIProvider(BaseProvider):
     def generate(self, prompt: str) -> str:
         if not self.endpoint:
             raise ProviderError("Ollama endpoint missing")
+        # TODO: call Ollama HTTP/local API. Stub for offline tests.
         return f"[ollama-api:{self.model}] {prompt}"
 
 

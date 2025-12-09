@@ -17,6 +17,7 @@ class GeminiAPIProvider(BaseProvider):
     def generate(self, prompt: str) -> str:
         if not self.api_key:
             raise ProviderError("Gemini API key missing")
+        # TODO: call Gemini API. Stub for offline tests.
         return f"[gemini-api:{self.model}] {prompt}"
 
 
