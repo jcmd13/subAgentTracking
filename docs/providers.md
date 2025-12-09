@@ -23,7 +23,10 @@ print(mux.generate("hello"))
 
 ## Next steps
 
-- Wire real API clients (Anthropic, Ollama HTTP/local, Google Gemini).
+- Wire real API clients (Anthropic, Ollama HTTP/local, Google Gemini) in the new stub modules:
+  - `src/core/providers_anthropic.py`
+  - `src/core/providers_ollama.py`
+  - `src/core/providers_gemini.py`
 - Add config-driven provider selection and keys.
 - Add retry/backoff and structured errors.
 - Integration tests hitting mocked APIs.
