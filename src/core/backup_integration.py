@@ -17,9 +17,12 @@ Usage:
 
 from typing import Dict, Any, Optional
 from pathlib import Path
+import logging
 
 from src.core.config import get_config
 from src.core import activity_logger
+
+logger = logging.getLogger(__name__)
 
 
 def trigger_automatic_backup(
@@ -135,7 +138,7 @@ def trigger_automatic_backup(
                 error_message="Failed to authenticate with Google Drive",
                 context={"reason": reason, "session_id": session_id},
                 severity="medium",
-                attempted_fix="Check credentials in .claude/credentials/",
+                attempted_fix="Check credentials in .subagent/credentials/ (or legacy .claude/)",
                 fix_successful=False,
             )
 
@@ -180,9 +183,24 @@ def trigger_automatic_backup(
     except ImportError as e:
         result["error"] = "backup_manager_import_error"
         result["skipped_reason"] = str(e)
+        logger.error("Backup manager import failed: %s", e, exc_info=True)
 
     except Exception as e:
         result["error"] = "unexpected_error"
+        logger.exception("Unexpected error during automatic backup")
+
+        # Attempt to persist handoff with error metadata
+        try:
+            from src.core import session_manager
+
+            session_manager.create_handoff(
+                session_id=session_id,
+                reason=f"backup_error_{reason}",
+                summary=str(e),
+            )
+            session_manager.end_session(session_id=session_id, status="error", notes=str(e))
+        except Exception:
+            logger.debug("Failed to persist handoff after backup error", exc_info=True)
 
         activity_logger.log_error(
             agent="backup-manager",

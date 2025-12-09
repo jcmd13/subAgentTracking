@@ -29,12 +29,15 @@ Usage:
 import json
 import gzip
 import time
+import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 import subprocess
 
 from src.core import config, activity_logger
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -221,10 +224,15 @@ def take_snapshot(
     if session_id is None:
         session_id = "session_default"
 
+    counter_file = _get_counter_file(cfg)
+
     # Increment snapshot counter
+    if _snapshot_counter == 0:
+        _snapshot_counter = _load_counter(counter_file)
     _snapshot_counter += 1
     snapshot_number = _snapshot_counter
     snapshot_id = f"snap_{snapshot_number:03d}"
+    _save_counter(counter_file, _snapshot_counter)
 
     # Update last counts for trigger detection
     if agent_count is not None:
@@ -288,21 +296,34 @@ def take_snapshot(
     # Get snapshot file path
     snapshot_path = cfg.get_snapshot_path(session_id, snapshot_number)
 
-    # Write snapshot to file
-    try:
-        if cfg.snapshot_compression:
-            # Write compressed JSON
-            with gzip.open(str(snapshot_path) + ".gz", "wt", encoding="utf-8") as f:
-                json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
-        else:
-            # Write uncompressed JSON
-            with open(snapshot_path, "w", encoding="utf-8") as f:
-                json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        import sys
-
-        print(f"Error writing snapshot {snapshot_id}: {e}", file=sys.stderr)
-        return snapshot_id  # Return ID even if write failed
+    # Write snapshot to file with retry/backoff
+    max_retries = 3
+    base_delay = 0.1
+    for attempt in range(max_retries):
+        try:
+            if cfg.snapshot_compression:
+                # Write compressed JSON
+                with gzip.open(str(snapshot_path) + ".gz", "wt", encoding="utf-8") as f:
+                    json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
+            else:
+                # Write uncompressed JSON
+                with open(snapshot_path, "w", encoding="utf-8") as f:
+                    json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
+            break
+        except Exception as e:
+            is_last = attempt == max_retries - 1
+            if is_last:
+                logger.error(
+                    "Error writing snapshot %s after %s attempts: %s",
+                    snapshot_id,
+                    max_retries,
+                    e,
+                    exc_info=True,
+                )
+                if getattr(cfg, "strict_mode", False):
+                    return None
+                return snapshot_id
+            time.sleep(base_delay * (attempt + 1))
 
     # Calculate duration
     duration_ms = int((time.time() - start_time) * 1000)
@@ -682,12 +703,10 @@ def create_handoff_summary(
                 error = backup_result.get("error", "unknown")
                 lines.append(f"⚠️ **Backup failed:** {error}")
             lines.append(f"")
-    except ImportError:
-        # Backup integration not available
-        pass
-    except Exception:
-        # Backup failed, but continue with handoff
-        pass
+    except ImportError as e:
+        logger.debug("Backup integration not available during handoff summary: %s", e)
+    except Exception as e:
+        logger.warning("Backup integration failed during handoff summary", exc_info=True)
 
     # Write handoff file
     handoff_path = cfg.get_handoff_path(session_id)
@@ -695,6 +714,22 @@ def create_handoff_summary(
         f.write("\n".join(lines))
 
     return str(handoff_path)
+
+
+# Persist handoff using session_manager if available (optional)
+def create_handoff_summary_with_state(session_id: str, reason: str = "handoff") -> str:
+    """
+    Wrapper that also records the handoff via session_manager (if available).
+    """
+    path = create_handoff_summary(session_id=session_id, reason=reason)
+    try:
+        from src.core import session_manager
+
+        session_manager.create_handoff(session_id=session_id, reason=reason, summary=None)
+    except Exception:
+        # Optional dependency; ignore failures
+        pass
+    return path
 
 
 # ============================================================================
@@ -708,6 +743,56 @@ def reset_snapshot_counter():
     _snapshot_counter = 0
     _last_agent_count = 0
     _last_token_count = 0
+    try:
+        cfg = config.get_config()
+        counter_file = _get_counter_file(cfg)
+        if counter_file.exists():
+            counter_file.unlink()
+    except Exception as e:
+        logger.warning("Failed to reset snapshot counter file: %s", e, exc_info=True)
+
+
+# ============================================================================
+# Counter Persistence
+# ============================================================================
+
+def _get_counter_file(cfg) -> Path:
+    """Get the counter file path under the active state dir."""
+    return cfg.state_dir / "counters.json"
+
+
+def _load_counter(counter_file: Path) -> int:
+    """Load snapshot counter from persisted file."""
+    if counter_file.exists():
+        try:
+            counter_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(counter_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and "snapshot" in data:
+                    return int(data.get("snapshot", 0))
+                if isinstance(data, int):
+                    return int(data)
+        except Exception as e:
+            logger.warning("Failed to load snapshot counter from %s: %s", counter_file, e, exc_info=True)
+            return 0
+    return 0
+
+
+def _save_counter(counter_file: Path, value: int) -> None:
+    """Persist snapshot counter atomically."""
+    counter_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = counter_file.with_suffix(".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump({"snapshot": value}, f)
+        tmp_path.replace(counter_file)
+    except Exception as e:
+        logger.warning("Failed to persist snapshot counter to %s: %s", counter_file, e, exc_info=True)
+        try:
+            tmp_path.unlink()
+        except Exception as cleanup_error:
+            logger.debug("Failed to clean up temp counter file %s: %s", tmp_path, cleanup_error, exc_info=True)
+        # Do not raise to avoid breaking caller
 
 
 __all__ = [

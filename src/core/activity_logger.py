@@ -581,6 +581,15 @@ def shutdown():
     except Exception as e:
         logger.warning("Backup on shutdown failed; continuing shutdown: %s", e, exc_info=True)
 
+    # Persist handoff summary if session_manager is available
+    try:
+        from src.core import session_manager
+        if _session_id:
+            session_manager.create_handoff(session_id=_session_id, reason="shutdown")
+            session_manager.end_session(session_id=_session_id, status="completed", notes="activity_logger_shutdown")
+    except Exception:
+        logger.debug("Failed to persist handoff/session end during shutdown", exc_info=True)
+
     if _writer:
         _writer.shutdown()
         _writer = None
