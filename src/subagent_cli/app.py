@@ -163,9 +163,9 @@ def session_start(
     note: Optional[str] = typer.Option(None, "--note", "-n", help="Metadata note"),
 ) -> None:
     """Start a new session and persist metadata."""
-    meta = {\"note\": note} if note else {}
+    meta = {"note": note} if note else {}
     sid = session_manager.start_session(session_id=session_id, metadata=meta)
-    typer.echo(f\"Started session: {sid}\")
+    typer.echo(f"Started session: {sid}")
 
 
 @app.command("session-end")
