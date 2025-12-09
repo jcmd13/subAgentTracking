@@ -23,6 +23,7 @@ import logging
 from src.core.config import get_config
 from src.core.event_bus import Event, get_event_bus
 from src.core.event_types import AGENT_INVOKED
+from src.core import providers as provider_factory
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class ModelRouter:
         Initialize model router.
 
         Args:
-            config_path: Path to model_tiers.yaml (default: .claude/config/)
+            config_path: Path to model_tiers.yaml (default: .subagent/config/, legacy .claude/config/ supported)
         """
         cfg = get_config()
         self.config_path = config_path or (cfg.claude_dir / "config" / "model_tiers.yaml")
@@ -179,10 +180,20 @@ class ModelRouter:
         try:
             with open(self.config_path, 'r') as f:
                 config = yaml.safe_load(f)
-                return config or {}
-        except Exception as e:
-            logger.error(f"Failed to load model tiers config: {e}")
-            return {}
+        return config or {}
+    except Exception as e:
+        logger.error(f"Failed to load model tiers config: {e}")
+        return {}
+
+    def get_provider_mux(self, provider_config_path: Optional[Path] = None):
+        """
+        Build a fallback provider manager based on config/providers.yaml.
+        """
+        cfg = None
+        if provider_config_path:
+            cfg = provider_factory.load_provider_config(config_path=provider_config_path)
+        providers = provider_factory.build_providers(cfg)
+        return provider_factory.FallbackManager(providers)
 
     def select_model(self, task: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
         """
@@ -391,7 +402,7 @@ def initialize_model_router(config_path: Optional[Path] = None) -> ModelRouter:
     Initialize the global model router.
 
     Args:
-        config_path: Path to model_tiers.yaml (default: .claude/config/)
+        config_path: Path to model_tiers.yaml (default: .subagent/config/, legacy .claude/config/ supported)
 
     Returns:
         ModelRouter instance
