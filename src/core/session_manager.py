@@ -52,7 +52,7 @@ def generate_session_id(prefix: str = "session") -> str:
 
 def start_session(session_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
     """Start a new session and persist metadata."""
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     sid = session_id or generate_session_id()
     data = {
         "session_id": sid,
@@ -68,7 +68,7 @@ def start_session(session_id: Optional[str] = None, metadata: Optional[Dict[str,
 
 def end_session(session_id: Optional[str] = None, status: str = "completed", notes: Optional[str] = None) -> Dict[str, Any]:
     """End an existing session and persist final metadata."""
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     sid = session_id or get_current_session_id()
     if not sid:
         return {"success": False, "error": "no_active_session"}
@@ -87,7 +87,7 @@ def end_session(session_id: Optional[str] = None, status: str = "completed", not
 
 def get_current_session_id() -> Optional[str]:
     """Return the current session ID from the persisted pointer, if any."""
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     current = _current_file(cfg)
     if current.exists():
         try:
@@ -99,7 +99,7 @@ def get_current_session_id() -> Optional[str]:
 
 
 def list_sessions() -> List[Dict[str, Any]]:
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     sessions = []
     for path in _session_dir(cfg).glob("session_*.json"):
         try:
@@ -114,7 +114,7 @@ def list_sessions() -> List[Dict[str, Any]]:
 
 def save_state(state: Dict[str, Any], session_id: Optional[str] = None) -> Path:
     """Persist arbitrary state for a session (crash-safe)."""
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     sid = session_id or get_current_session_id() or generate_session_id()
     state_dir = cfg.state_dir / sid
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -125,7 +125,7 @@ def save_state(state: Dict[str, Any], session_id: Optional[str] = None) -> Path:
 
 def load_state(session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Load previously saved state for a session, if present."""
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     sid = session_id or get_current_session_id()
     if not sid:
         return None
@@ -141,7 +141,7 @@ def load_state(session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
 def create_handoff(session_id: Optional[str] = None, reason: str = "handoff", summary: Optional[str] = None) -> Path:
     """Create a simple handoff markdown file for the given session."""
-    cfg = core_config.get_config()
+    cfg = core_config.get_config(reload=True)
     sid = session_id or get_current_session_id() or generate_session_id()
     handoff_path = cfg.handoffs_dir / f"{sid}_{reason}.md"
     handoff_path.parent.mkdir(parents=True, exist_ok=True)
