@@ -174,26 +174,26 @@ def session_end(
     status: str = typer.Option("completed", "--status", "-s", help="Final status"),
     note: Optional[str] = typer.Option(None, "--note", "-n", help="Notes"),
 ) -> None:
-    \"\"\"End a session and mark status.\"\"\"
+    """End a session and mark status."""
     result = session_manager.end_session(session_id=session_id, status=status, notes=note)
-    if not result.get(\"success\"):
-        typer.echo(f\"Failed to end session: {result.get('error')}\")
+    if not result.get("success"):
+        typer.echo(f"Failed to end session: {result.get('error')}")
         raise typer.Exit(code=1)
-    typer.echo(f\"Ended session: {result['session_id']}\")
+    typer.echo(f"Ended session: {result['session_id']}")
 
 
 @app.command("session-list")
 def session_list(json_output: bool = typer.Option(False, "--json", help="Output JSON")) -> None:
-    \"\"\"List persisted sessions.\"\"\"
+    """List persisted sessions."""
     sessions = session_manager.list_sessions()
     if json_output:
         typer.echo(json.dumps(sessions, indent=2))
     else:
         if not sessions:
-            typer.echo(\"No sessions found.\")
+            typer.echo("No sessions found.")
             return
         for s in sessions:
-            typer.echo(f\"{s.get('session_id')} [{s.get('status')}] started={s.get('started_at')} ended={s.get('ended_at')}\")
+            typer.echo(f"{s.get('session_id')} [{s.get('status')}] started={s.get('started_at')} ended={s.get('ended_at')}")
 
 
 @app.command()
