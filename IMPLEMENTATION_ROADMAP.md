@@ -42,7 +42,7 @@ Assessment: 70% foundation complete, 0% user-facing features complete
 | **0** | Critical Bug Fixes | 1 week | 🔴 Not Started | None |
 | **1** | Human Interface (CLI) | 2 weeks | ⬜ Blocked | Phase 0 |
 | **2** | Persistent State | 1 week | 🟢 Complete | Phase 1 |
-| **3** | Provider Adapters | 1 week | ⬜ Blocked | Phase 2 |
+| **3** | Provider Adapters | 1 week | 🟠 In Progress (stubs + fallback manager) | Phase 2 |
 | **4** | Agent Lifecycle | 1 week | ⬜ Blocked | Phase 3 |
 | **5** | Permissions & Security | 1 week | ⬜ Blocked | Phase 4 |
 | **6** | Quality Gates | 1 week | ⬜ Blocked | Phase 5 |
@@ -187,11 +187,11 @@ Assessment: 70% foundation complete, 0% user-facing features complete
 
 | Task | Description | Est. | Status |
 |------|-------------|------|--------|
-| 3.1 | Provider base class (abstract interface) | 4h | ⬜ |
-| 3.2 | Claude provider (Anthropic API) | 8h | ⬜ |
-| 3.3 | Ollama provider (local models) | 6h | ⬜ |
-| 3.4 | Gemini provider (Google API) | 6h | ⬜ |
-| 3.5 | Fallback manager (auto-switch on failure) | 8h | ⬜ |
+| 3.1 | Provider base class (abstract interface) | 4h | ✅ |
+| 3.2 | Claude provider (Anthropic API) | 8h | 🟠 (stub implemented) |
+| 3.3 | Ollama provider (local models) | 6h | 🟠 (stub implemented) |
+| 3.4 | Gemini provider (Google API) | 6h | 🟠 (stub implemented) |
+| 3.5 | Fallback manager (auto-switch on failure) | 8h | ✅ |
 
 ### Phase 3 Exit Criteria
 
