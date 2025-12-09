@@ -1,6 +1,6 @@
 # Provider Adapters (Phase 3)
 
-Current status: stub adapters implemented for Claude, Ollama, and Gemini with a simple fallback manager. Real API integration is pending.
+Current status: stub adapters implemented for Claude, Ollama, and Gemini with a simple fallback manager and config-driven provider selection. Real API integration is pending.
 
 ## Interfaces
 
@@ -13,9 +13,10 @@ Current status: stub adapters implemented for Claude, Ollama, and Gemini with a 
 ## Usage (stubbed)
 
 ```python
-from src.core.providers import ClaudeProvider, OllamaProvider, GeminiProvider, FallbackManager
+from src.core.providers import load_provider_config, build_providers, FallbackManager
 
-providers = [ClaudeProvider(), OllamaProvider(model="llama3"), GeminiProvider()]
+cfg = load_provider_config()  # reads .subagent/config/providers.yaml if present
+providers = build_providers(cfg)
 mux = FallbackManager(providers)
 print(mux.generate("hello"))
 ```
