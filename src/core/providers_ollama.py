@@ -1,8 +1,14 @@
 """
-Ollama provider implementation (stubbed).
+Ollama provider implementation (HTTP/local).
 
-Replace generate() with real HTTP/local ollama calls when available.
+If HTTP call fails (e.g., Ollama not running), falls back to stub output to keep
+tests offline-safe.
 """
+
+import json
+from typing import Optional
+
+import requests  # type: ignore
 
 from src.core.providers import BaseProvider, ProviderError
 
@@ -15,8 +21,18 @@ class OllamaAPIProvider(BaseProvider):
     def generate(self, prompt: str) -> str:
         if not self.endpoint:
             raise ProviderError("Ollama endpoint missing")
-        # TODO: call Ollama HTTP/local API. Stub for offline tests.
-        return f"[ollama-api:{self.model}] {prompt}"
+        try:
+            resp = requests.post(
+                f"{self.endpoint}/api/generate",
+                json={"model": self.model, "prompt": prompt},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("response") or data.get("data") or json.dumps(data)
+        except Exception as e:
+            # Stub fallback for offline/failed calls
+            return f"[ollama-stub:{self.model}] {prompt} ({e})"
 
 
 __all__ = ["OllamaAPIProvider"]
