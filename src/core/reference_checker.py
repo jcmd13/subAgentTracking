@@ -329,6 +329,24 @@ class ReferenceChecker:
 
         # Log to activity logger
         try:
+            from src.core.activity_logger_compat import log_reference_check_completed
+
+            event_id = log_reference_check_completed(
+                agent=agent,
+                trigger=trigger,
+                requirement_ids=requirement_ids,
+                context=context,
+            )
+            logger.info(
+                "Logged reference check: %d requirements, trigger=%s",
+                len(requirement_ids),
+                trigger,
+            )
+            return event_id
+        except Exception:
+            pass
+
+        try:
             from src.core.activity_logger import log_requirement_reference
 
             event_id = log_requirement_reference(
@@ -338,7 +356,7 @@ class ReferenceChecker:
                 context=context,
             )
             logger.info(
-                "Logged reference check: %d requirements, trigger=%s",
+                "Logged reference check via activity_logger: %d requirements, trigger=%s",
                 len(requirement_ids),
                 trigger,
             )

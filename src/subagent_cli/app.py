@@ -1,3 +1,4 @@
+import asyncio
 import gzip
 import json
 import os
@@ -22,8 +23,14 @@ from src.core.activity_logger_compat import (
     log_test_run_started,
     log_test_run_completed,
 )
+from src.core.activity_logger_subscriber import (
+    initialize_activity_logger_subscriber,
+    shutdown_activity_logger_subscriber,
+)
 from src.core.config import Config
 from src.core import session_manager
+from src.core.prd_state import prd_exists
+from src.core.reference_checker import get_reference_checker
 
 app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
 
@@ -33,6 +40,14 @@ CONFIG_PATH = SUBAGENT_ROOT / "config.yaml"
 
 # Ensure core config uses .subagent for data directories
 os.environ.setdefault("SUBAGENT_DATA_DIR", str(SUBAGENT_ROOT))
+
+_AUTO_SESSION_SKIP = {
+    "init",
+    "session-start",
+    "session-end",
+    "session-list",
+    "help",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +164,114 @@ def _save_default_config() -> None:
         )
 
 
+def _should_auto_session(command: Optional[str]) -> bool:
+    if not command:
+        return False
+    return command not in _AUTO_SESSION_SKIP
+
+
+def _get_active_session_id(cfg: Config) -> Optional[str]:
+    session_id = session_manager.get_current_session_id()
+    if not session_id:
+        return None
+    session_path = cfg.claude_dir / "sessions" / f"{session_id}.json"
+    if not session_path.exists():
+        return None
+    try:
+        data = json.loads(session_path.read_text())
+    except Exception:
+        return None
+    if data.get("status") == "active" and not data.get("ended_at"):
+        return session_id
+    return None
+
+
+def _run_async(coro) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(coro)
+    else:
+        loop.create_task(coro)
+
+
+def _flush_activity_logger_subscriber() -> None:
+    try:
+        _run_async(shutdown_activity_logger_subscriber())
+    except Exception:
+        return
+
+
+def _maybe_run_reference_check(
+    agent: str,
+    trigger: str,
+    context: Optional[str] = None,
+) -> None:
+    if not prd_exists():
+        return
+    checker = get_reference_checker()
+    if not checker:
+        return
+    requirements = checker.get_relevant_requirements(
+        current_context=context,
+        max_items=5,
+    )
+    prompt = checker.generate_reference_prompt(requirements, trigger)
+    requirement_ids = [req.get("id") for req in requirements if req.get("id")]
+    checker.log_reference(
+        requirement_ids=requirement_ids,
+        agent=agent,
+        trigger=trigger,
+        context=context,
+    )
+    typer.echo(prompt, err=True)
+
+
+def _start_cli_session(command: Optional[str]) -> Dict[str, Any]:
+    cfg = _load_core_config(reload=True)
+
+    active_session_id = _get_active_session_id(cfg)
+    auto_started = False
+    if active_session_id:
+        session_id = active_session_id
+    else:
+        session_id = session_manager.start_session(
+            metadata={"source": "cli", "command": command or "unknown"}
+        )
+        auto_started = True
+
+    if cfg.activity_log_enabled:
+        initialize_activity_logger_subscriber(
+            session_id=session_id,
+            use_compression=cfg.activity_log_compression,
+        )
+    initialize_activity_logger(session_id=session_id)
+    _maybe_run_reference_check(
+        agent="local-cli",
+        trigger="cli_start",
+        context=command,
+    )
+
+    return {"session_id": session_id, "auto_started": auto_started}
+
+
+def _end_cli_session(state: Optional[Dict[str, Any]]) -> None:
+    if not state:
+        return
+    session_id = state.get("session_id")
+    auto_started = state.get("auto_started", False)
+
+    if auto_started and session_id:
+        shutdown_activity_logger(session_id=session_id)
+        session_manager.end_session(
+            session_id=session_id,
+            status="completed",
+            notes="cli_auto_end",
+        )
+
+    _flush_activity_logger_subscriber()
+
+
 # ---------------------------------------------------------------------------
 # Event Emission Helpers
 # ---------------------------------------------------------------------------
@@ -161,6 +284,15 @@ def _resolve_session_id(session_id: Optional[str]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+
+
+@app.callback()
+def _cli_callback(ctx: typer.Context) -> None:
+    command = ctx.invoked_subcommand
+    if not _should_auto_session(command):
+        return
+    state = _start_cli_session(command)
+    ctx.call_on_close(lambda: _end_cli_session(state))
 
 
 @app.command()
@@ -181,9 +313,20 @@ def session_start(
     note: Optional[str] = typer.Option(None, "--note", "-n", help="Metadata note"),
 ) -> None:
     """Start a new session and persist metadata."""
+    cfg = _load_core_config(reload=True)
     meta = {"note": note} if note else {}
     sid = session_manager.start_session(session_id=session_id, metadata=meta)
+    if cfg.activity_log_enabled:
+        initialize_activity_logger_subscriber(
+            session_id=sid,
+            use_compression=cfg.activity_log_compression,
+        )
     initialize_activity_logger(session_id=sid)
+    _maybe_run_reference_check(
+        agent="local-cli",
+        trigger="session_start",
+        context=note,
+    )
     typer.echo(f"Started session: {sid}")
 
 
@@ -199,6 +342,7 @@ def session_end(
         typer.echo(f"Failed to end session: {result.get('error')}")
         raise typer.Exit(code=1)
     shutdown_activity_logger(session_id=result.get("session_id"))
+    _flush_activity_logger_subscriber()
     typer.echo(f"Ended session: {result['session_id']}")
 
 

@@ -29,7 +29,8 @@ from src.core.event_types import (
     COST_TRACKED,
     TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
     TEST_RUN_STARTED, TEST_RUN_COMPLETED,
-    SESSION_SUMMARY
+    SESSION_SUMMARY,
+    REFERENCE_CHECK_TRIGGERED, REFERENCE_CHECK_COMPLETED
 )
 
 # ============================================================================
@@ -756,6 +757,44 @@ def log_session_summary(
     }
     payload.update(kwargs)
     return _publish_event(SESSION_SUMMARY, payload, session_id=session_id)
+
+
+def log_reference_check_triggered(
+    trigger: str,
+    agent_count: Optional[int] = None,
+    token_count: Optional[int] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log reference check triggered event."""
+    payload = {
+        "trigger": trigger,
+        "agent_count": agent_count,
+        "token_count": token_count,
+    }
+    payload.update(kwargs)
+    return _publish_event(REFERENCE_CHECK_TRIGGERED, payload, session_id=session_id)
+
+
+def log_reference_check_completed(
+    agent: str,
+    trigger: str,
+    requirement_ids: List[str],
+    context: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log reference check completed event."""
+    payload = {
+        "agent": agent,
+        "trigger": trigger,
+        "requirement_count": len(requirement_ids),
+        "requirement_ids": requirement_ids,
+    }
+    if context:
+        payload["context"] = context
+    payload.update(kwargs)
+    return _publish_event(REFERENCE_CHECK_COMPLETED, payload, session_id=session_id)
 
 
 # ============================================================================

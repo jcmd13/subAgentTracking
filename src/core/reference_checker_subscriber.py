@@ -192,7 +192,7 @@ class ReferenceCheckerSubscriber(EventHandler):
 
             # Log the reference
             requirement_ids = [req["id"] for req in requirements]
-            self._checker.log_reference(
+            event_id = self._checker.log_reference(
                 requirement_ids=requirement_ids,
                 agent=agent,
                 trigger=trigger,
@@ -204,12 +204,13 @@ class ReferenceCheckerSubscriber(EventHandler):
             if self.on_reference_check:
                 self.on_reference_check(prompt)
 
-            # Publish check completed event
-            await self._publish_reference_completed(
-                trigger=trigger,
-                requirement_count=len(requirements),
-                prompt=prompt,
-            )
+            # Publish check completed event if not logged via activity logger
+            if event_id is None:
+                await self._publish_reference_completed(
+                    trigger=trigger,
+                    requirement_count=len(requirements),
+                    prompt=prompt,
+                )
 
             logger.info(
                 "Reference check completed: trigger=%s, requirements=%d",

@@ -260,7 +260,7 @@ class TestLogReference:
     def test_updates_reference_history(self, checker):
         """Test that reference history is updated."""
         with patch("src.core.reference_checker.increment_reference_count"):
-            with patch("src.core.activity_logger.log_requirement_reference", return_value="evt_001"):
+            with patch("src.core.activity_logger_compat.log_reference_check_completed", return_value="evt_001"):
                 checker.log_reference(
                     requirement_ids=["F001", "AC001"],
                     agent="orchestrator",
@@ -274,7 +274,7 @@ class TestLogReference:
     def test_handles_missing_activity_logger(self, checker):
         """Test graceful handling when activity logger not available."""
         with patch("src.core.reference_checker.increment_reference_count"):
-            with patch.dict("sys.modules", {"src.core.activity_logger": None}):
+            with patch.dict("sys.modules", {"src.core.activity_logger_compat": None, "src.core.activity_logger": None}):
                 # Should not raise
                 result = checker.log_reference(
                     requirement_ids=["F001"],
