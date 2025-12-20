@@ -136,6 +136,11 @@ def ensure_initialized(
     Returns True if initialization is complete or already done.
     """
     cfg = get_config(reload=True)
+    try:
+        ensure_codex_prompt_installed()
+    except Exception:
+        pass
+
     if is_initialized(cfg):
         return True
 

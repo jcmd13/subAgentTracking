@@ -11,6 +11,7 @@ runner = CliRunner()
 def test_cli_session_commands(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SUBAGENT_DATA_DIR", str(tmp_path / ".subagent"))
+    monkeypatch.setenv("SUBAGENT_CODEX_PROMPT_INSTALL", "false")
 
     # init
     result = runner.invoke(app, ["init"])
