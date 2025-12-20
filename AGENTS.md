@@ -220,3 +220,8 @@ python -c "from src.core.backup_manager import test_connection; print('✅ Backu
 - Analytics can be queried via SQL or Python
 - Backups are stored in accessible Google Drive structure
 - Phase reviews generate actionable insights
+
+### For Codex CLI Sessions
+- If `.subagent/config.yaml` is missing, prefer `/prompts:subagent-init` or allow the auto-init prompt.
+- Do not ask the user to run setup commands manually; defaults should be used unless explicitly requested.
+- Advanced settings live in `.subagent/config.yaml` and should stay out of the main workflow.

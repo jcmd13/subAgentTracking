@@ -27,6 +27,7 @@ from src.core.activity_logger_subscriber import (
     initialize_activity_logger_subscriber,
     shutdown_activity_logger_subscriber,
 )
+from src.core.bootstrap import ensure_initialized
 from src.core.config import Config
 from src.core import session_manager
 from src.core.prd_state import prd_exists
@@ -228,6 +229,7 @@ def _maybe_run_reference_check(
 
 
 def _start_cli_session(command: Optional[str]) -> Dict[str, Any]:
+    ensure_initialized(prompt_if_needed=True)
     cfg = _load_core_config(reload=True)
 
     active_session_id = _get_active_session_id(cfg)
@@ -313,6 +315,7 @@ def session_start(
     note: Optional[str] = typer.Option(None, "--note", "-n", help="Metadata note"),
 ) -> None:
     """Start a new session and persist metadata."""
+    ensure_initialized(prompt_if_needed=True)
     cfg = _load_core_config(reload=True)
     meta = {"note": note} if note else {}
     sid = session_manager.start_session(session_id=session_id, metadata=meta)

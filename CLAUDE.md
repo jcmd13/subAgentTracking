@@ -19,6 +19,12 @@ Solves the "lost context on crashes/token limits" problem for multi-agent Claude
 
 **Token Savings**: 85-90% on recovery operations (status check: 50k→5k, session resume: 150k→8k)
 
+## Claude Code Startup (Auto-Init)
+
+- If `.subagent/config.yaml` is missing, run `/subagent-init` to initialize with defaults.
+- Do not ask the user to run setup commands by hand; only ask for confirmation if needed.
+- Advanced settings live in `.subagent/config.yaml` and should stay out of the main workflow.
+
 ## Development Commands
 
 ### Setup

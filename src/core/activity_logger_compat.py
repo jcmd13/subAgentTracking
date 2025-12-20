@@ -20,6 +20,7 @@ import asyncio
 import time
 import threading
 
+from src.core.bootstrap import ensure_initialized
 from src.core.event_bus import Event, get_event_bus
 from src.core.event_types import (
     AGENT_INVOKED, AGENT_COMPLETED, AGENT_FAILED,
@@ -147,6 +148,11 @@ def initialize(session_id: Optional[str] = None):
     with _init_lock:
         if _initialized:
             return
+
+        try:
+            ensure_initialized(prompt_if_needed=True)
+        except Exception:
+            pass
 
         # Generate or use provided session ID
         _session_id = session_id or generate_session_id()
