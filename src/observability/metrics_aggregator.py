@@ -36,6 +36,8 @@ from src.core.event_bus import Event, EventHandler, get_event_bus
 from src.core.event_types import (
     AGENT_INVOKED, AGENT_COMPLETED, AGENT_FAILED,
     TOOL_USED, WORKFLOW_STARTED, WORKFLOW_COMPLETED,
+    TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
+    TEST_RUN_STARTED, TEST_RUN_COMPLETED,
     ALL_EVENT_TYPES
 )
 
@@ -64,6 +66,7 @@ class EventRecord:
     duration_ms: Optional[float] = None
     tokens: Optional[int] = None
     cost: Optional[float] = None
+    status: Optional[str] = None
     success: bool = True
 
 
@@ -85,6 +88,15 @@ class MetricsSnapshot:
     # Workflow metrics
     workflows_active: int = 0
     workflows_completed: int = 0
+
+    # Task metrics
+    tasks_active: int = 0
+    tasks_completed: int = 0
+
+    # Test metrics
+    tests_running: int = 0
+    tests_passed: int = 0
+    tests_failed: int = 0
 
     # Performance metrics
     avg_agent_duration_ms: float = 0.0
@@ -153,6 +165,8 @@ class MetricsAggregator(EventHandler):
         # Active workflow tracking
         self.active_workflows: Dict[str, float] = {}  # workflow_id -> start_time
         self.active_agents: Dict[str, float] = {}  # agent_id -> start_time
+        self.active_tasks: Dict[str, float] = {}  # task_id -> start_time
+        self.active_tests: Dict[str, float] = {}  # test_id -> start_time
 
         # Cumulative metrics (all-time)
         self.cumulative_events = 0
@@ -234,8 +248,18 @@ class MetricsAggregator(EventHandler):
                 duration_ms = metadata.get("duration_ms")
 
         # Extract tokens and cost
-        tokens = payload.get("tokens") or payload.get("tokens_consumed")
+        tokens = payload.get("tokens")
+        if tokens is None:
+            tokens = payload.get("tokens_consumed")
+        if tokens is None:
+            tokens = payload.get("tokens_used")
+
         cost = payload.get("cost")
+        if cost is None:
+            cost = payload.get("cost_usd")
+
+        # Extract status (task/test completion)
+        status = payload.get("status")
 
         # Determine success
         success = event.event_type != AGENT_FAILED
@@ -247,6 +271,7 @@ class MetricsAggregator(EventHandler):
             duration_ms=duration_ms,
             tokens=tokens,
             cost=cost,
+            status=status,
             success=success
         )
 
@@ -285,6 +310,34 @@ class MetricsAggregator(EventHandler):
 
             if agent_id and agent_id in self.active_agents:
                 del self.active_agents[agent_id]
+
+        # Track tasks
+        if event.event_type in [TASK_STARTED, TASK_STAGE_CHANGED]:
+            task_id = payload.get("task_id")
+            if task_id:
+                self.active_tasks[task_id] = event.timestamp.timestamp()
+
+        elif event.event_type == TASK_COMPLETED:
+            task_id = payload.get("task_id")
+            if task_id and task_id in self.active_tasks:
+                del self.active_tasks[task_id]
+
+        # Track tests
+        test_suite = payload.get("test_suite")
+        test_task_id = payload.get("task_id")
+        test_key = payload.get("run_id")
+        if not test_key:
+            if test_suite and test_task_id:
+                test_key = f"{test_suite}:{test_task_id}"
+            else:
+                test_key = test_suite
+
+        if event.event_type == TEST_RUN_STARTED and test_key:
+            self.active_tests[test_key] = event.timestamp.timestamp()
+
+        elif event.event_type == TEST_RUN_COMPLETED and test_key:
+            if test_key in self.active_tests:
+                del self.active_tests[test_key]
 
     def get_current_stats(
         self,
@@ -338,6 +391,21 @@ class MetricsAggregator(EventHandler):
         # Workflow metrics
         snapshot.workflows_active = len(self.active_workflows)
         snapshot.workflows_completed = snapshot.events_by_type.get(WORKFLOW_COMPLETED, 0)
+
+        # Task metrics
+        snapshot.tasks_active = len(self.active_tasks)
+        snapshot.tasks_completed = snapshot.events_by_type.get(TASK_COMPLETED, 0)
+
+        # Test metrics
+        snapshot.tests_running = len(self.active_tests)
+        snapshot.tests_passed = sum(
+            1 for r in recent_records
+            if r.event_type == TEST_RUN_COMPLETED and r.status == "passed"
+        )
+        snapshot.tests_failed = sum(
+            1 for r in recent_records
+            if r.event_type == TEST_RUN_COMPLETED and r.status == "failed"
+        )
 
         # Performance metrics (agent durations)
         durations = [
@@ -393,6 +461,8 @@ class MetricsAggregator(EventHandler):
             "events_per_second": self.cumulative_events / uptime if uptime > 0 else 0,
             "active_workflows": len(self.active_workflows),
             "active_agents": len(self.active_agents),
+            "active_tasks": len(self.active_tasks),
+            "active_tests": len(self.active_tests),
             "window_sizes": self.window_sizes,
             "max_records": self.max_records
         }
@@ -404,6 +474,8 @@ class MetricsAggregator(EventHandler):
 
         self.active_workflows.clear()
         self.active_agents.clear()
+        self.active_tasks.clear()
+        self.active_tests.clear()
         self.cumulative_events = 0
         self.cumulative_tokens = 0
         self.cumulative_cost = 0.0
@@ -419,7 +491,8 @@ _aggregator_instance: Optional[MetricsAggregator] = None
 
 def initialize_metrics_aggregator(
     window_sizes: Optional[List[int]] = None,
-    max_records: int = 10000
+    max_records: int = 10000,
+    auto_subscribe: bool = False
 ) -> MetricsAggregator:
     """
     Initialize global metrics aggregator instance.
@@ -427,6 +500,7 @@ def initialize_metrics_aggregator(
     Args:
         window_sizes: Time windows to maintain (default: 1m, 5m, 15m)
         max_records: Maximum records per window
+        auto_subscribe: Auto-subscribe to event bus
 
     Returns:
         MetricsAggregator instance
@@ -439,7 +513,8 @@ def initialize_metrics_aggregator(
 
     _aggregator_instance = MetricsAggregator(
         window_sizes=window_sizes,
-        max_records=max_records
+        max_records=max_records,
+        auto_subscribe=auto_subscribe
     )
 
     return _aggregator_instance

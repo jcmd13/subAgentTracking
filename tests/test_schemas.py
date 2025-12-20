@@ -1,7 +1,7 @@
 """
 Comprehensive tests for event schema validation (src/core/schemas.py)
 
-Tests all 7 event types, validation logic, serialization, and edge cases.
+Tests all 13 event types, validation logic, serialization, and edge cases.
 Target: 100% test coverage on schemas module.
 
 Test Categories:
@@ -13,8 +13,11 @@ Test Categories:
 6. Error Event Tests
 7. Context Snapshot Event Tests
 8. Validation Event Tests
-9. Helper Function Tests (validate_event, serialize_event)
-10. Edge Cases and Error Conditions
+9. Task Lifecycle Event Tests
+10. Test Telemetry Event Tests
+11. Session Summary Event Tests
+12. Helper Function Tests (validate_event, serialize_event)
+13. Edge Cases and Error Conditions
 """
 
 import pytest
@@ -34,6 +37,12 @@ from src.core.schemas import (
     ContextSnapshotEvent,
     ValidationEvent,
     ValidationStatus,
+    TaskStartedEvent,
+    TaskStageChangedEvent,
+    TaskCompletedEvent,
+    TestRunStartedEvent,
+    TestRunCompletedEvent,
+    SessionSummaryEvent,
     EVENT_TYPE_REGISTRY,
     validate_event,
     serialize_event,
@@ -603,7 +612,124 @@ class TestValidationEvent:
 
 
 # ============================================================================
-# 9. Helper Function Tests
+# 9. Task Lifecycle Event Tests
+# ============================================================================
+
+
+class TestTaskLifecycleEvents:
+    """Test task lifecycle event schemas."""
+
+    def test_task_started_event(self, base_event_data):
+        """Test task started event."""
+        data = base_event_data.copy()
+        data.update(
+            {
+                "event_type": "task.started",
+                "task_id": "task_001",
+                "task_name": "Implement dashboard",
+                "stage": "plan",
+            }
+        )
+        event = TaskStartedEvent(**data)
+        assert event.task_id == "task_001"
+        assert event.stage == "plan"
+
+    def test_task_stage_changed_event(self, base_event_data):
+        """Test task stage changed event."""
+        data = base_event_data.copy()
+        data.update(
+            {
+                "event_type": "task.stage_changed",
+                "task_id": "task_001",
+                "stage": "implement",
+                "previous_stage": "plan",
+                "progress_pct": 50.0,
+            }
+        )
+        event = TaskStageChangedEvent(**data)
+        assert event.previous_stage == "plan"
+        assert event.progress_pct == 50.0
+
+    def test_task_completed_event(self, base_event_data):
+        """Test task completed event."""
+        data = base_event_data.copy()
+        data.update(
+            {
+                "event_type": "task.completed",
+                "task_id": "task_001",
+                "status": "success",
+                "duration_ms": 1200,
+            }
+        )
+        event = TaskCompletedEvent(**data)
+        assert event.status == "success"
+        assert event.duration_ms == 1200
+
+
+# ============================================================================
+# 10. Test Telemetry Event Tests
+# ============================================================================
+
+
+class TestTestRunEvents:
+    """Test test run event schemas."""
+
+    def test_test_run_started_event(self, base_event_data):
+        """Test test run started event."""
+        data = base_event_data.copy()
+        data.update(
+            {
+                "event_type": "test.run_started",
+                "test_suite": "unit",
+                "command": "pytest",
+            }
+        )
+        event = TestRunStartedEvent(**data)
+        assert event.test_suite == "unit"
+        assert event.command == "pytest"
+
+    def test_test_run_completed_event(self, base_event_data):
+        """Test test run completed event."""
+        data = base_event_data.copy()
+        data.update(
+            {
+                "event_type": "test.run_completed",
+                "test_suite": "unit",
+                "status": "passed",
+                "passed": 120,
+                "failed": 0,
+            }
+        )
+        event = TestRunCompletedEvent(**data)
+        assert event.status == "passed"
+        assert event.passed == 120
+
+
+# ============================================================================
+# 11. Session Summary Event Tests
+# ============================================================================
+
+
+class TestSessionSummaryEvent:
+    """Test session summary event schema."""
+
+    def test_session_summary_event(self, base_event_data):
+        """Test session summary event."""
+        data = base_event_data.copy()
+        data.update(
+            {
+                "event_type": "session.summary",
+                "summary_type": "end",
+                "summary_text": "Session ended cleanly",
+            }
+        )
+        event = SessionSummaryEvent(**data)
+        assert event.summary_type == "end"
+        assert "Session ended" in event.summary_text
+
+
+# ============================================================================
+# 12. Helper Function Tests
 # ============================================================================
 
 
@@ -669,6 +795,56 @@ class TestHelperFunctions:
                         "result": "pass",
                     }
                 )
+            elif event_type == "task.started":
+                data.update(
+                    {
+                        "task_id": "task_001",
+                        "task_name": "Test task",
+                        "stage": "plan",
+                    }
+                )
+            elif event_type == "task.stage_changed":
+                data.update(
+                    {
+                        "task_id": "task_001",
+                        "stage": "implement",
+                    }
+                )
+            elif event_type == "task.completed":
+                data.update(
+                    {
+                        "task_id": "task_001",
+                        "status": "success",
+                    }
+                )
+            elif event_type == "test.run_started":
+                data.update(
+                    {
+                        "test_suite": "unit",
+                    }
+                )
+            elif event_type == "test.run_completed":
+                data.update(
+                    {
+                        "test_suite": "unit",
+                        "status": "passed",
+                    }
+                )
+            elif event_type == "session.summary":
+                data.update(
+                    {
+                        "summary_type": "start",
+                        "summary_text": "Session started",
+                    }
+                )
+            elif event_type == "requirement_reference":
+                data.update(
+                    {
+                        "agent": "test",
+                        "trigger": "agent_count_5",
+                        "requirement_ids": ["F001", "US001"],
+                    }
+                )
 
             event = validate_event(data)
             assert isinstance(event, event_class)
@@ -716,7 +892,7 @@ class TestHelperFunctions:
 
 
 # ============================================================================
-# 10. Edge Cases and Error Conditions
+# 13. Edge Cases and Error Conditions
 # ============================================================================
 
 
@@ -755,6 +931,13 @@ class TestEdgeCases:
             "error",
             "context_snapshot",
             "validation",
+            "task.started",
+            "task.stage_changed",
+            "task.completed",
+            "test.run_started",
+            "test.run_completed",
+            "session.summary",
+            "requirement_reference",
         }
         assert set(EVENT_TYPE_REGISTRY.keys()) == expected_types
 

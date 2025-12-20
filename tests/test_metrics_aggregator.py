@@ -14,7 +14,9 @@ from unittest.mock import Mock, patch
 from src.core.event_bus import Event, EventBus
 from src.core.event_types import (
     AGENT_INVOKED, AGENT_COMPLETED, AGENT_FAILED,
-    TOOL_USED, WORKFLOW_STARTED, WORKFLOW_COMPLETED
+    TOOL_USED, WORKFLOW_STARTED, WORKFLOW_COMPLETED,
+    TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
+    TEST_RUN_STARTED, TEST_RUN_COMPLETED
 )
 
 from src.observability.metrics_aggregator import (
@@ -79,6 +81,7 @@ class TestEventRecord:
             duration_ms=100.0,
             tokens=500,
             cost=0.02,
+            status="passed",
             success=True
         )
 
@@ -87,6 +90,7 @@ class TestEventRecord:
         assert record.duration_ms == 100.0
         assert record.tokens == 500
         assert record.cost == 0.02
+        assert record.status == "passed"
         assert record.success is True
 
 
@@ -216,6 +220,68 @@ class TestMetricsAggregator:
         assert "agent-1" not in aggregator.active_agents
         assert len(aggregator.active_agents) == 0
 
+    def test_task_tracking(self, aggregator):
+        """Should track active tasks."""
+        start_event = Event(
+            event_type=TASK_STARTED,
+            timestamp=datetime.utcnow(),
+            payload={"task_id": "task-1", "task_name": "Test task", "stage": "plan"},
+            trace_id="test-trace",
+            session_id="test-session"
+        )
+        aggregator.record_event(start_event)
+
+        assert "task-1" in aggregator.active_tasks
+
+        stage_event = Event(
+            event_type=TASK_STAGE_CHANGED,
+            timestamp=datetime.utcnow(),
+            payload={"task_id": "task-1", "stage": "implement"},
+            trace_id="test-trace",
+            session_id="test-session"
+        )
+        aggregator.record_event(stage_event)
+
+        assert "task-1" in aggregator.active_tasks
+
+        complete_event = Event(
+            event_type=TASK_COMPLETED,
+            timestamp=datetime.utcnow(),
+            payload={"task_id": "task-1", "status": "success"},
+            trace_id="test-trace",
+            session_id="test-session"
+        )
+        aggregator.record_event(complete_event)
+
+        assert "task-1" not in aggregator.active_tasks
+
+    def test_test_tracking(self, aggregator):
+        """Should track active tests and results."""
+        start_event = Event(
+            event_type=TEST_RUN_STARTED,
+            timestamp=datetime.utcnow(),
+            payload={"test_suite": "unit", "task_id": "task-1"},
+            trace_id="test-trace",
+            session_id="test-session"
+        )
+        aggregator.record_event(start_event)
+
+        assert "unit:task-1" in aggregator.active_tests
+
+        complete_event = Event(
+            event_type=TEST_RUN_COMPLETED,
+            timestamp=datetime.utcnow(),
+            payload={"test_suite": "unit", "task_id": "task-1", "status": "failed"},
+            trace_id="test-trace",
+            session_id="test-session"
+        )
+        aggregator.record_event(complete_event)
+
+        assert "unit:task-1" not in aggregator.active_tests
+
+        stats = aggregator.get_current_stats(window_size=60)
+        assert stats.tests_failed == 1
+
     def test_get_current_stats_empty(self, aggregator):
         """Should return empty stats with no events."""
         stats = aggregator.get_current_stats(window_size=60)
@@ -223,6 +289,8 @@ class TestMetricsAggregator:
         assert isinstance(stats, MetricsSnapshot)
         assert stats.total_events == 0
         assert stats.agents_active == 0
+        assert stats.tasks_active == 0
+        assert stats.tests_running == 0
         assert stats.total_tokens == 0
 
     def test_get_current_stats_with_events(self, aggregator):
@@ -324,6 +392,8 @@ class TestMetricsAggregator:
         assert cumulative["events_per_second"] > 0
         assert cumulative["window_sizes"] == [60, 300]
         assert cumulative["max_records"] == 1000
+        assert cumulative["active_tasks"] == 0
+        assert cumulative["active_tests"] == 0
 
     def test_clear(self, aggregator):
         """Should clear all recorded events."""

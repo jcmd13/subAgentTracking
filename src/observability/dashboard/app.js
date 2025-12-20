@@ -32,6 +32,25 @@ let metricsHistory = {
     maxPoints: 60  // Last 60 seconds
 };
 
+let taskState = {
+    taskId: null,
+    taskName: 'No active task',
+    stage: '--',
+    status: 'Idle',
+    updatedAt: null
+};
+
+let lastTest = {
+    status: 'Not run',
+    summary: '--',
+    updatedAt: null
+};
+
+let sessionSummary = {
+    summaryType: 'start',
+    summaryText: 'No summary yet.'
+};
+
 // Chart instances
 let eventRateChart = null;
 let eventTypeChart = null;
@@ -106,7 +125,13 @@ function handleMessage(event) {
         const data = JSON.parse(event.data);
 
         if (data.type === 'event') {
-            handleEventMessage(data.event);
+            const eventPayload = data.event || {
+                event_type: data.event_type,
+                timestamp: data.timestamp,
+                payload: data.payload || {},
+                metadata: data.metadata || {}
+            };
+            handleEventMessage(eventPayload);
         } else if (data.type === 'metrics') {
             handleMetricsMessage(data.metrics);
         } else if (data.type === 'error') {
@@ -138,8 +163,14 @@ function handleClose(event) {
 // ============================================================================
 
 function handleEventMessage(event) {
+    const normalized = normalizeEvent(event);
+
+    updateTaskFromEvent(normalized);
+    updateTestFromEvent(normalized);
+    updateSessionSummaryFromEvent(normalized);
+
     // Add to event buffer
-    eventBuffer.unshift(event);
+    eventBuffer.unshift(normalized);
     if (eventBuffer.length > config.maxEvents) {
         eventBuffer.pop();
     }
@@ -148,11 +179,11 @@ function handleEventMessage(event) {
     const eventTypeFilter = document.getElementById('eventTypeFilter').value;
     const agentFilter = document.getElementById('agentFilter').value.toLowerCase();
 
-    if (eventTypeFilter && event.event_type !== eventTypeFilter) return;
-    if (agentFilter && !JSON.stringify(event).toLowerCase().includes(agentFilter)) return;
+    if (eventTypeFilter && normalized.event_type !== eventTypeFilter) return;
+    if (agentFilter && !JSON.stringify(normalized).toLowerCase().includes(agentFilter)) return;
 
     // Add to stream
-    addEventToStream(event);
+    addEventToStream(normalized);
 
     // Update metrics history for event rate chart
     updateMetricsHistory();
@@ -188,6 +219,10 @@ function updateMetricsDisplay(metrics) {
         metrics.agents_per_minute?.toFixed(2) || '0.0';
     document.getElementById('activeWorkflows').textContent =
         metrics.workflows_active || 0;
+    document.getElementById('activeTasks').textContent =
+        metrics.tasks_active || 0;
+    document.getElementById('testsPassFail').textContent =
+        `${metrics.tests_passed || 0} / ${metrics.tests_failed || 0}`;
     document.getElementById('totalTokens').textContent =
         (metrics.total_tokens || 0).toLocaleString();
     document.getElementById('totalCost').textContent =
@@ -202,6 +237,139 @@ function updateMetricsDisplay(metrics) {
     updatePerformanceChart(metrics);
 }
 
+function normalizeEvent(event) {
+    return {
+        event_type: event.event_type,
+        timestamp: event.timestamp,
+        payload: event.payload || {},
+        metadata: event.metadata || {}
+    };
+}
+
+function updateTaskFromEvent(event) {
+    const payload = event.payload || {};
+
+    if (event.event_type === 'task.started') {
+        taskState = {
+            taskId: payload.task_id || null,
+            taskName: payload.task_name || 'Unnamed task',
+            stage: payload.stage || '--',
+            status: 'In Progress',
+            updatedAt: event.timestamp
+        };
+        renderTaskStrip();
+        return;
+    }
+
+    if (event.event_type === 'task.stage_changed') {
+        taskState = {
+            taskId: payload.task_id || taskState.taskId,
+            taskName: payload.task_name || taskState.taskName,
+            stage: payload.stage || taskState.stage,
+            status: 'In Progress',
+            updatedAt: event.timestamp
+        };
+        renderTaskStrip();
+        return;
+    }
+
+    if (event.event_type === 'task.completed') {
+        const status = payload.status === 'failed' ? 'Failed' : 'Completed';
+        taskState = {
+            taskId: payload.task_id || taskState.taskId,
+            taskName: payload.task_name || taskState.taskName,
+            stage: payload.stage || 'Done',
+            status,
+            updatedAt: event.timestamp
+        };
+        renderTaskStrip();
+    }
+}
+
+function updateTestFromEvent(event) {
+    const payload = event.payload || {};
+
+    if (event.event_type === 'test.run_started') {
+        lastTest = {
+            status: 'Running',
+            summary: payload.test_suite || 'Test suite',
+            updatedAt: event.timestamp
+        };
+        renderTestStatus();
+        return;
+    }
+
+    if (event.event_type === 'test.run_completed') {
+        const status = payload.status || 'unknown';
+        const label = status === 'passed' ? 'Passed' : status === 'failed' ? 'Failed' : 'Warning';
+        const summary = payload.summary || payload.test_suite || 'Test run';
+        lastTest = {
+            status: label,
+            summary,
+            updatedAt: event.timestamp
+        };
+        renderTestStatus();
+    }
+}
+
+function updateSessionSummaryFromEvent(event) {
+    const payload = event.payload || {};
+    if (event.event_type !== 'session.summary') return;
+
+    sessionSummary = {
+        summaryType: payload.summary_type || 'start',
+        summaryText: payload.summary_text || 'No summary available.'
+    };
+    renderSessionSummary(true);
+}
+
+function renderTaskStrip() {
+    document.getElementById('taskName').textContent = taskState.taskName || 'No active task';
+    document.getElementById('taskStage').textContent = `Stage: ${taskState.stage || '--'}`;
+    document.getElementById('taskStatus').textContent = taskState.status || 'Idle';
+    document.getElementById('taskUpdated').textContent = `Updated: ${formatTimestamp(taskState.updatedAt)}`;
+}
+
+function renderTestStatus() {
+    document.getElementById('lastTestStatus').textContent = lastTest.status || 'Not run';
+    document.getElementById('lastTestSummary').textContent = lastTest.summary || '--';
+}
+
+function renderSessionSummary(show) {
+    const summaryEl = document.getElementById('sessionSummary');
+    const summaryText = document.getElementById('summaryText');
+    const summaryType = document.getElementById('summaryType');
+
+    summaryText.textContent = sessionSummary.summaryText || 'No summary available.';
+    summaryType.textContent = sessionSummary.summaryType === 'end' ? 'End' : 'Start';
+
+    if (show) {
+        summaryEl.classList.remove('hidden');
+    }
+}
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return '--';
+    try {
+        return new Date(timestamp).toLocaleTimeString();
+    } catch (e) {
+        return '--';
+    }
+}
+
+function toggleSessionSummary(forceShow) {
+    const summaryEl = document.getElementById('sessionSummary');
+    const shouldShow = forceShow !== undefined
+        ? forceShow
+        : summaryEl.classList.contains('hidden');
+
+    if (shouldShow) {
+        summaryEl.classList.remove('hidden');
+    } else {
+        summaryEl.classList.add('hidden');
+    }
+}
+
 function addEventToStream(event) {
     const stream = document.getElementById('eventStream');
 
@@ -213,7 +381,7 @@ function addEventToStream(event) {
 
     // Create event element
     const eventEl = document.createElement('div');
-    eventEl.className = `event-item event-${getEventCategory(event.event_type)}`;
+    eventEl.className = `event-item event-${getEventCategory(event)}`;
 
     const timestamp = new Date(event.timestamp).toLocaleTimeString();
     const showTimestamp = config.showTimestamps;
@@ -232,7 +400,13 @@ function addEventToStream(event) {
     }
 }
 
-function getEventCategory(eventType) {
+function getEventCategory(event) {
+    const eventType = event.event_type || '';
+    const payload = event.payload || {};
+
+    if (eventType === 'test.run_completed' && payload.status === 'failed') return 'error';
+    if (eventType === 'task.completed' && payload.status === 'failed') return 'error';
+
     if (eventType.includes('failed') || eventType.includes('error')) return 'error';
     if (eventType.includes('completed')) return 'success';
     if (eventType.includes('invoked') || eventType.includes('started')) return 'info';
@@ -253,6 +427,23 @@ function formatEventDetails(event) {
     // Extract tool name
     if (payload.tool) {
         return `Tool: ${payload.tool}`;
+    }
+
+    // Extract task info
+    if (payload.task_id || payload.task_name) {
+        const taskLabel = payload.task_name || payload.task_id;
+        return `Task: ${taskLabel}`;
+    }
+
+    // Extract test info
+    if (payload.test_suite) {
+        const status = payload.status ? ` (${payload.status})` : '';
+        return `Test: ${payload.test_suite}${status}`;
+    }
+
+    // Extract session summary info
+    if (event.event_type === 'session.summary') {
+        return `Summary: ${payload.summary_type || 'start'}`;
     }
 
     // Extract workflow ID
@@ -505,6 +696,14 @@ function setupEventHandlers() {
     // Event filters
     document.getElementById('eventTypeFilter').addEventListener('change', filterEventStream);
     document.getElementById('agentFilter').addEventListener('input', filterEventStream);
+
+    // Session summary toggles
+    document.getElementById('summaryToggle').addEventListener('click', () => {
+        toggleSessionSummary();
+    });
+    document.getElementById('summaryClose').addEventListener('click', () => {
+        toggleSessionSummary(false);
+    });
 
     // Click outside modal to close
     window.addEventListener('click', (e) => {

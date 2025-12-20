@@ -5,7 +5,7 @@ This module defines all event types used in the system with JSON Schema validati
 to ensure payload integrity and consistency.
 
 Design Pattern: Schema-driven validation
-Total Event Types: 20 (5 agent + 4 tool + 4 snapshot + 4 session + 3 cost)
+Total Event Types: 30 (5 agent + 4 tool + 4 snapshot + 4 session + 3 cost + 2 workflow + 3 task + 2 test + 1 summary + 2 reference)
 Validation: JSON Schema with jsonschema library
 
 Links Back To: Main Plan → Phase 1 → Task 1.2
@@ -55,6 +55,22 @@ COST_OPTIMIZATION_OPPORTUNITY = "cost.optimization_opportunity"
 WORKFLOW_STARTED = "workflow.started"
 WORKFLOW_COMPLETED = "workflow.completed"
 
+# Task Lifecycle Events (3 types)
+TASK_STARTED = "task.started"
+TASK_STAGE_CHANGED = "task.stage_changed"
+TASK_COMPLETED = "task.completed"
+
+# Test Telemetry Events (2 types)
+TEST_RUN_STARTED = "test.run_started"
+TEST_RUN_COMPLETED = "test.run_completed"
+
+# Session Summary Events (1 type)
+SESSION_SUMMARY = "session.summary"
+
+# Reference Check Events (2 types)
+REFERENCE_CHECK_TRIGGERED = "reference_check.triggered"
+REFERENCE_CHECK_COMPLETED = "reference_check.completed"
+
 # Base event types (20, per specification)
 BASE_EVENT_TYPES = [
     # Agent events
@@ -73,6 +89,14 @@ BASE_EVENT_TYPES = [
 ALL_EVENT_TYPES = BASE_EVENT_TYPES + [
     WORKFLOW_STARTED,
     WORKFLOW_COMPLETED,
+    TASK_STARTED,
+    TASK_STAGE_CHANGED,
+    TASK_COMPLETED,
+    TEST_RUN_STARTED,
+    TEST_RUN_COMPLETED,
+    SESSION_SUMMARY,
+    REFERENCE_CHECK_TRIGGERED,
+    REFERENCE_CHECK_COMPLETED,
 ]
 
 # ============================================================================
@@ -826,6 +850,241 @@ WORKFLOW_COMPLETED_SCHEMA = {
     "additionalProperties": True
 }
 
+# Schema for TASK_STARTED
+TASK_STARTED_SCHEMA = {
+    "type": "object",
+    "required": ["task_id", "task_name", "stage"],
+    "properties": {
+        "task_id": {
+            "type": "string",
+            "description": "Unique task identifier"
+        },
+        "task_name": {
+            "type": "string",
+            "description": "Human-readable task name"
+        },
+        "stage": {
+            "type": "string",
+            "description": "Current task stage (e.g., plan, implement, test)"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Brief task summary (optional)"
+        },
+        "eta_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Estimated minutes to completion (optional)"
+        },
+        "owner": {
+            "type": "string",
+            "description": "Agent or user responsible (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for TASK_STAGE_CHANGED
+TASK_STAGE_CHANGED_SCHEMA = {
+    "type": "object",
+    "required": ["task_id", "stage"],
+    "properties": {
+        "task_id": {
+            "type": "string",
+            "description": "Unique task identifier"
+        },
+        "task_name": {
+            "type": "string",
+            "description": "Human-readable task name (optional)"
+        },
+        "stage": {
+            "type": "string",
+            "description": "New task stage"
+        },
+        "previous_stage": {
+            "type": "string",
+            "description": "Previous task stage (optional)"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Brief stage summary (optional)"
+        },
+        "progress_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Progress percentage (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for TASK_COMPLETED
+TASK_COMPLETED_SCHEMA = {
+    "type": "object",
+    "required": ["task_id", "status"],
+    "properties": {
+        "task_id": {
+            "type": "string",
+            "description": "Unique task identifier"
+        },
+        "task_name": {
+            "type": "string",
+            "description": "Human-readable task name (optional)"
+        },
+        "status": {
+            "type": "string",
+            "enum": ["success", "failed", "warning"],
+            "description": "Completion status"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Completion summary (optional)"
+        },
+        "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Task duration in milliseconds (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for TEST_RUN_STARTED
+TEST_RUN_STARTED_SCHEMA = {
+    "type": "object",
+    "required": ["test_suite"],
+    "properties": {
+        "test_suite": {
+            "type": "string",
+            "description": "Test suite name (e.g., unit, integration)"
+        },
+        "task_id": {
+            "type": "string",
+            "description": "Related task ID (optional)"
+        },
+        "command": {
+            "type": "string",
+            "description": "Command executed (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for TEST_RUN_COMPLETED
+TEST_RUN_COMPLETED_SCHEMA = {
+    "type": "object",
+    "required": ["test_suite", "status"],
+    "properties": {
+        "test_suite": {
+            "type": "string",
+            "description": "Test suite name"
+        },
+        "task_id": {
+            "type": "string",
+            "description": "Related task ID (optional)"
+        },
+        "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "warning"],
+            "description": "Test run result"
+        },
+        "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Duration in milliseconds (optional)"
+        },
+        "passed": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tests passed (optional)"
+        },
+        "failed": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tests failed (optional)"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Short test summary (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for SESSION_SUMMARY
+SESSION_SUMMARY_SCHEMA = {
+    "type": "object",
+    "required": ["summary_type", "summary_text"],
+    "properties": {
+        "summary_type": {
+            "type": "string",
+            "enum": ["start", "end"],
+            "description": "Summary timing (start/end)"
+        },
+        "summary_text": {
+            "type": "string",
+            "description": "Human-readable summary"
+        },
+        "summary_data": {
+            "type": "object",
+            "description": "Structured summary data (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for REFERENCE_CHECK_TRIGGERED
+REFERENCE_CHECK_TRIGGERED_SCHEMA = {
+    "type": "object",
+    "required": ["trigger"],
+    "properties": {
+        "trigger": {
+            "type": "string",
+            "description": "Trigger reason (e.g., agent_count_5)"
+        },
+        "agent_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Agent invocation count (optional)"
+        },
+        "token_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Token count at trigger (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for REFERENCE_CHECK_COMPLETED
+REFERENCE_CHECK_COMPLETED_SCHEMA = {
+    "type": "object",
+    "required": ["trigger", "requirement_count"],
+    "properties": {
+        "trigger": {
+            "type": "string",
+            "description": "Trigger reason"
+        },
+        "requirement_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of requirements surfaced"
+        },
+        "prompt_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Length of generated prompt (optional)"
+        },
+        "reference_number": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Reference check sequence number (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
 # ============================================================================
 # Schema Registry (maps event type to schema)
 # ============================================================================
@@ -863,7 +1122,23 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
 
     # Workflow events
     WORKFLOW_STARTED: WORKFLOW_STARTED_SCHEMA,
-    WORKFLOW_COMPLETED: WORKFLOW_COMPLETED_SCHEMA
+    WORKFLOW_COMPLETED: WORKFLOW_COMPLETED_SCHEMA,
+
+    # Task lifecycle events
+    TASK_STARTED: TASK_STARTED_SCHEMA,
+    TASK_STAGE_CHANGED: TASK_STAGE_CHANGED_SCHEMA,
+    TASK_COMPLETED: TASK_COMPLETED_SCHEMA,
+
+    # Test telemetry events
+    TEST_RUN_STARTED: TEST_RUN_STARTED_SCHEMA,
+    TEST_RUN_COMPLETED: TEST_RUN_COMPLETED_SCHEMA,
+
+    # Session summary events
+    SESSION_SUMMARY: SESSION_SUMMARY_SCHEMA,
+
+    # Reference check events
+    REFERENCE_CHECK_TRIGGERED: REFERENCE_CHECK_TRIGGERED_SCHEMA,
+    REFERENCE_CHECK_COMPLETED: REFERENCE_CHECK_COMPLETED_SCHEMA,
 }
 
 # ============================================================================
@@ -944,9 +1219,9 @@ def get_all_event_types() -> List[str]:
     Example:
         >>> event_types = get_all_event_types()
         >>> len(event_types)
-        20
+        28
     """
-    return BASE_EVENT_TYPES.copy()
+    return ALL_EVENT_TYPES.copy()
 
 
 def is_valid_event_type(event_type: str) -> bool:

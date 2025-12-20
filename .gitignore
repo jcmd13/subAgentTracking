@@ -5,16 +5,38 @@
 !.claude/credentials/.gitkeep
 
 # Local Session Data (backed up to Google Drive)
-.claude/logs/*.jsonl
-.claude/logs/*.jsonl.gz
-.claude/state/*.json
-.claude/state/*.json.gz
-.claude/handoffs/*.md
+.claude/logs/
+.claude/logs/*
+.claude/state/
+.claude/state/*
+.claude/handoffs
+.claude/handoffs/
+.claude/handoffs/*
+.claude/handoffs_legacy/
+.claude/handoffs_legacy/*
+.claude/sessions
+.claude/sessions/
+.claude/sessions/*
 
 # Analytics Database (backed up to Google Drive)
-.claude/analytics/*.db
-.claude/analytics/*.db-shm
-.claude/analytics/*.db-wal
+.claude/analytics/
+.claude/analytics/*
+
+# Local Session Data (backed up to Google Drive) - .subagent
+.subagent/logs/*
+.subagent/state/*
+.subagent/handoffs/*
+.subagent/sessions/*
+
+# Analytics Database (backed up to Google Drive) - .subagent
+.subagent/analytics/*
+
+# Credentials and Tokens - .subagent
+.subagent/credentials/*
+
+# PRD requirements (allow PRD markdown)
+.subagent/requirements/*
+!.subagent/requirements/PRD*.md
 
 # Python
 __pycache__/

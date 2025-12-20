@@ -27,6 +27,30 @@
             </div>
         </header>
 
+        <!-- Task Strip -->
+        <div class="task-strip" id="taskStrip">
+            <div class="task-strip-main">
+                <div class="task-label">Current Task</div>
+                <div class="task-value" id="taskName">No active task</div>
+                <div class="task-meta">
+                    <span class="task-stage" id="taskStage">Stage: --</span>
+                    <span class="task-status" id="taskStatus">Idle</span>
+                    <span class="task-updated" id="taskUpdated">Updated: --</span>
+                </div>
+            </div>
+            <div class="task-strip-side">
+                <div class="task-kpi">
+                    <div class="task-kpi-label">Last Test</div>
+                    <div class="task-kpi-value" id="lastTestStatus">Not run</div>
+                    <div class="task-kpi-sub" id="lastTestSummary">--</div>
+                </div>
+                <div class="task-kpi">
+                    <div class="task-kpi-label">Session Summary</div>
+                    <button id="summaryToggle" class="btn btn-secondary btn-small">View</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Main Content -->
         <main class="dashboard-main">
             <!-- Left Panel: Live Metrics -->
@@ -57,6 +81,14 @@
                     <div class="metric-card">
                         <div class="metric-label">Active Workflows</div>
                         <div class="metric-value" id="activeWorkflows">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Active Tasks</div>
+                        <div class="metric-value" id="activeTasks">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Tests (pass/fail)</div>
+                        <div class="metric-value" id="testsPassFail">0 / 0</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-label">Total Tokens</div>
@@ -106,9 +138,25 @@
                             <option value="tool.used">Tool Used</option>
                             <option value="workflow.started">Workflow Started</option>
                             <option value="workflow.completed">Workflow Completed</option>
+                            <option value="task.started">Task Started</option>
+                            <option value="task.stage_changed">Task Stage Changed</option>
+                            <option value="task.completed">Task Completed</option>
+                            <option value="test.run_started">Test Run Started</option>
+                            <option value="test.run_completed">Test Run Completed</option>
+                            <option value="session.summary">Session Summary</option>
                         </select>
                         <input type="text" id="agentFilter" placeholder="Filter by agent..." class="input-small">
                     </div>
+                </div>
+
+                <!-- Session Summary -->
+                <div class="session-summary hidden" id="sessionSummary">
+                    <div class="session-summary-header">
+                        <h3>Session Summary</h3>
+                        <span class="summary-badge" id="summaryType">Start</span>
+                        <button id="summaryClose" class="btn btn-secondary btn-small">Close</button>
+                    </div>
+                    <pre id="summaryText">No summary yet.</pre>
                 </div>
 
                 <!-- Event Stream -->

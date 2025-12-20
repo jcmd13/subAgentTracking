@@ -13,6 +13,15 @@ import yaml
 from src.core import config as core_config
 from src.core.activity_logger import list_log_files
 from src.core.activity_logger import get_current_session_id
+from src.core.activity_logger_compat import (
+    initialize as initialize_activity_logger,
+    shutdown as shutdown_activity_logger,
+    log_task_started,
+    log_task_stage_changed,
+    log_task_completed,
+    log_test_run_started,
+    log_test_run_completed,
+)
 from src.core.config import Config
 from src.core import session_manager
 
@@ -141,6 +150,15 @@ def _save_default_config() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Event Emission Helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_session_id(session_id: Optional[str]) -> Optional[str]:
+    return session_id or session_manager.get_current_session_id()
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -165,6 +183,7 @@ def session_start(
     """Start a new session and persist metadata."""
     meta = {"note": note} if note else {}
     sid = session_manager.start_session(session_id=session_id, metadata=meta)
+    initialize_activity_logger(session_id=sid)
     typer.echo(f"Started session: {sid}")
 
 
@@ -179,6 +198,7 @@ def session_end(
     if not result.get("success"):
         typer.echo(f"Failed to end session: {result.get('error')}")
         raise typer.Exit(code=1)
+    shutdown_activity_logger(session_id=result.get("session_id"))
     typer.echo(f"Ended session: {result['session_id']}")
 
 
@@ -405,6 +425,120 @@ def task_show(
         typer.echo(f"Task not found: {task_id}")
         raise typer.Exit(code=1)
     _render_task(task, json_output=json_output)
+
+
+@app.command("emit-task-start")
+def emit_task_start(
+    task_id: str = typer.Argument(..., help="Task ID"),
+    task_name: str = typer.Argument(..., help="Task name"),
+    stage: str = typer.Argument(..., help="Task stage (plan/implement/test)"),
+    summary: Optional[str] = typer.Option(None, "--summary", help="Task summary"),
+    eta_minutes: Optional[float] = typer.Option(None, "--eta-min", help="ETA in minutes"),
+    owner: Optional[str] = typer.Option(None, "--owner", help="Owner/agent"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID"),
+) -> None:
+    """Emit a task.started event."""
+    sid = _resolve_session_id(session_id)
+    event_id = log_task_started(
+        task_id=task_id,
+        task_name=task_name,
+        stage=stage,
+        summary=summary,
+        eta_minutes=eta_minutes,
+        owner=owner,
+        session_id=sid,
+    )
+    typer.echo(f"Emitted task.started: {event_id}")
+
+
+@app.command("emit-task-stage")
+def emit_task_stage(
+    task_id: str = typer.Argument(..., help="Task ID"),
+    stage: str = typer.Argument(..., help="New task stage"),
+    task_name: Optional[str] = typer.Option(None, "--task-name", help="Task name"),
+    previous_stage: Optional[str] = typer.Option(None, "--previous-stage", help="Previous stage"),
+    summary: Optional[str] = typer.Option(None, "--summary", help="Stage summary"),
+    progress_pct: Optional[float] = typer.Option(None, "--progress", help="Progress percent"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID"),
+) -> None:
+    """Emit a task.stage_changed event."""
+    sid = _resolve_session_id(session_id)
+    event_id = log_task_stage_changed(
+        task_id=task_id,
+        stage=stage,
+        task_name=task_name,
+        previous_stage=previous_stage,
+        summary=summary,
+        progress_pct=progress_pct,
+        session_id=sid,
+    )
+    typer.echo(f"Emitted task.stage_changed: {event_id}")
+
+
+@app.command("emit-task-complete")
+def emit_task_complete(
+    task_id: str = typer.Argument(..., help="Task ID"),
+    status: str = typer.Argument(..., help="Completion status (success/failed/warning)"),
+    task_name: Optional[str] = typer.Option(None, "--task-name", help="Task name"),
+    summary: Optional[str] = typer.Option(None, "--summary", help="Completion summary"),
+    duration_ms: Optional[int] = typer.Option(None, "--duration-ms", help="Duration in ms"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID"),
+) -> None:
+    """Emit a task.completed event."""
+    sid = _resolve_session_id(session_id)
+    event_id = log_task_completed(
+        task_id=task_id,
+        status=status,
+        task_name=task_name,
+        summary=summary,
+        duration_ms=duration_ms,
+        session_id=sid,
+    )
+    typer.echo(f"Emitted task.completed: {event_id}")
+
+
+@app.command("emit-test-start")
+def emit_test_start(
+    test_suite: str = typer.Argument(..., help="Test suite name"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", help="Related task ID"),
+    command: Optional[str] = typer.Option(None, "--command", help="Command executed"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID"),
+) -> None:
+    """Emit a test.run_started event."""
+    sid = _resolve_session_id(session_id)
+    event_id = log_test_run_started(
+        test_suite=test_suite,
+        task_id=task_id,
+        command=command,
+        session_id=sid,
+    )
+    typer.echo(f"Emitted test.run_started: {event_id}")
+
+
+@app.command("emit-test-complete")
+def emit_test_complete(
+    test_suite: str = typer.Argument(..., help="Test suite name"),
+    status: str = typer.Argument(..., help="Result status (passed/failed/warning)"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", help="Related task ID"),
+    duration_ms: Optional[int] = typer.Option(None, "--duration-ms", help="Duration in ms"),
+    passed: Optional[int] = typer.Option(None, "--passed", help="Tests passed"),
+    failed: Optional[int] = typer.Option(None, "--failed", help="Tests failed"),
+    summary: Optional[str] = typer.Option(None, "--summary", help="Summary"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID"),
+) -> None:
+    """Emit a test.run_completed event."""
+    sid = _resolve_session_id(session_id)
+    event_id = log_test_run_completed(
+        test_suite=test_suite,
+        status=status,
+        task_id=task_id,
+        duration_ms=duration_ms,
+        passed=passed,
+        failed=failed,
+        summary=summary,
+        session_id=sid,
+    )
+    typer.echo(f"Emitted test.run_completed: {event_id}")
 
 
 def _tail_file_lines(path: Path, lines: int = 20) -> Iterable[str]:

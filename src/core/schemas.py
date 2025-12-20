@@ -1,7 +1,7 @@
 """
 Event Schema Definitions for SubAgent Tracking System
 
-This module defines Pydantic models for all 7 event types used in the tracking system:
+This module defines Pydantic models for all 13 event types used in the tracking system:
 1. AgentInvocationEvent - Agent start/completion
 2. ToolUsageEvent - Tool invocation with duration
 3. FileOperationEvent - File create/modify/delete with diffs
@@ -9,6 +9,12 @@ This module defines Pydantic models for all 7 event types used in the tracking s
 5. ErrorEvent - Error with context and fix attempts
 6. ContextSnapshotEvent - Token usage and state checkpoint
 7. ValidationEvent - Validation check results
+8. TaskStartedEvent - Task lifecycle start
+9. TaskStageChangedEvent - Task lifecycle stage transition
+10. TaskCompletedEvent - Task lifecycle completion
+11. TestRunStartedEvent - Test run kickoff
+12. TestRunCompletedEvent - Test results
+13. SessionSummaryEvent - Session summary payload
 
 All events share common fields and are validated using Pydantic for type safety.
 
@@ -331,6 +337,114 @@ class ValidationEvent(BaseEvent):
 
 
 # ============================================================================
+# Event Type 8: Task Lifecycle
+# ============================================================================
+
+
+class TaskStartedEvent(BaseEvent):
+    """Tracks the start of a task."""
+
+    event_type: Literal["task.started"] = "task.started"
+    task_id: str = Field(..., description="Unique task identifier")
+    task_name: str = Field(..., description="Human-readable task name")
+    stage: str = Field(..., description="Current task stage")
+    summary: Optional[str] = Field(None, description="Brief task summary")
+    eta_minutes: Optional[float] = Field(None, description="Estimated minutes to completion")
+    owner: Optional[str] = Field(None, description="Agent or user responsible")
+
+
+class TaskStageChangedEvent(BaseEvent):
+    """Tracks a task stage transition."""
+
+    event_type: Literal["task.stage_changed"] = "task.stage_changed"
+    task_id: str = Field(..., description="Unique task identifier")
+    stage: str = Field(..., description="New task stage")
+    task_name: Optional[str] = Field(None, description="Human-readable task name")
+    previous_stage: Optional[str] = Field(None, description="Previous task stage")
+    summary: Optional[str] = Field(None, description="Brief stage summary")
+    progress_pct: Optional[float] = Field(None, description="Progress percentage (0-100)")
+
+
+class TaskCompletedEvent(BaseEvent):
+    """Tracks task completion."""
+
+    event_type: Literal["task.completed"] = "task.completed"
+    task_id: str = Field(..., description="Unique task identifier")
+    status: Literal["success", "failed", "warning"] = Field(
+        ..., description="Completion status"
+    )
+    task_name: Optional[str] = Field(None, description="Human-readable task name")
+    summary: Optional[str] = Field(None, description="Completion summary")
+    duration_ms: Optional[int] = Field(None, description="Duration in milliseconds")
+
+
+# ============================================================================
+# Event Type 9: Test Telemetry
+# ============================================================================
+
+
+class TestRunStartedEvent(BaseEvent):
+    """Tracks when a test run starts."""
+
+    __test__ = False
+    event_type: Literal["test.run_started"] = "test.run_started"
+    test_suite: str = Field(..., description="Test suite name")
+    task_id: Optional[str] = Field(None, description="Related task ID")
+    command: Optional[str] = Field(None, description="Command executed")
+
+
+class TestRunCompletedEvent(BaseEvent):
+    """Tracks when a test run completes."""
+
+    __test__ = False
+    event_type: Literal["test.run_completed"] = "test.run_completed"
+    test_suite: str = Field(..., description="Test suite name")
+    status: Literal["passed", "failed", "warning"] = Field(
+        ..., description="Test run result"
+    )
+    task_id: Optional[str] = Field(None, description="Related task ID")
+    duration_ms: Optional[int] = Field(None, description="Duration in milliseconds")
+    passed: Optional[int] = Field(None, description="Number of tests passed")
+    failed: Optional[int] = Field(None, description="Number of tests failed")
+    summary: Optional[str] = Field(None, description="Short test summary")
+
+
+# ============================================================================
+# Event Type 10: Session Summary
+# ============================================================================
+
+
+class SessionSummaryEvent(BaseEvent):
+    """Tracks a session summary payload."""
+
+    event_type: Literal["session.summary"] = "session.summary"
+    summary_type: Literal["start", "end"] = Field(..., description="Summary timing")
+    summary_text: str = Field(..., description="Human-readable summary")
+    summary_data: Optional[Dict[str, Any]] = Field(
+        None, description="Structured summary data"
+    )
+
+
+# ============================================================================
+# Event Type 11: Requirement Reference
+# ============================================================================
+
+
+class RequirementReferenceEvent(BaseEvent):
+    """Tracks a PRD requirement reference check."""
+
+    event_type: Literal["requirement_reference"] = "requirement_reference"
+    agent: str = Field(..., description="Agent performing the reference check")
+    trigger: str = Field(..., description="Trigger reason (e.g., agent_count_5)")
+    requirement_ids: List[str] = Field(
+        ..., description="Requirement IDs referenced"
+    )
+    context: Optional[str] = Field(
+        None, description="Current work context (optional)"
+    )
+
+
+# ============================================================================
 # Event Type Registry
 # ============================================================================
 
@@ -343,6 +457,13 @@ EVENT_TYPE_REGISTRY: Dict[str, type[BaseEvent]] = {
     "error": ErrorEvent,
     "context_snapshot": ContextSnapshotEvent,
     "validation": ValidationEvent,
+    "task.started": TaskStartedEvent,
+    "task.stage_changed": TaskStageChangedEvent,
+    "task.completed": TaskCompletedEvent,
+    "test.run_started": TestRunStartedEvent,
+    "test.run_completed": TestRunCompletedEvent,
+    "session.summary": SessionSummaryEvent,
+    "requirement_reference": RequirementReferenceEvent,
 }
 
 
@@ -415,6 +536,13 @@ __all__ = [
     "ContextSnapshotEvent",
     "ValidationEvent",
     "ValidationStatus",
+    "TaskStartedEvent",
+    "TaskStageChangedEvent",
+    "TaskCompletedEvent",
+    "TestRunStartedEvent",
+    "TestRunCompletedEvent",
+    "SessionSummaryEvent",
+    "RequirementReferenceEvent",
     "EVENT_TYPE_REGISTRY",
     "validate_event",
     "serialize_event",

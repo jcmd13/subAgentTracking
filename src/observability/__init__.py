@@ -185,7 +185,8 @@ def initialize_observability(
     # Initialize metrics aggregator (with event bus subscription)
     aggregator = initialize_metrics_aggregator(
         window_sizes=window_sizes,
-        max_records=max_records
+        max_records=max_records,
+        auto_subscribe=auto_subscribe
     )
     logger.info(" Metrics aggregator initialized")
 
@@ -308,6 +309,11 @@ def get_observability_stats() -> Dict[str, Any]:
                 'agents_failed': snapshot.agents_failed,
                 'workflows_active': snapshot.workflows_active,
                 'workflows_completed': snapshot.workflows_completed,
+                'tasks_active': snapshot.tasks_active,
+                'tasks_completed': snapshot.tasks_completed,
+                'tests_running': snapshot.tests_running,
+                'tests_passed': snapshot.tests_passed,
+                'tests_failed': snapshot.tests_failed,
                 'avg_agent_duration_ms': snapshot.avg_agent_duration_ms,
                 'p50_agent_duration_ms': snapshot.p50_agent_duration_ms,
                 'p95_agent_duration_ms': snapshot.p95_agent_duration_ms,

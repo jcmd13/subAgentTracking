@@ -58,6 +58,7 @@ class Config:
     analytics_dir: Path = field(default_factory=lambda: _default_data_dir() / "analytics")
     credentials_dir: Path = field(default_factory=lambda: _default_data_dir() / "credentials")
     handoffs_dir: Path = field(default_factory=lambda: _default_data_dir() / "handoffs")
+    requirements_dir: Path = field(default_factory=lambda: _default_data_dir() / "requirements")
 
     # Activity log settings
     activity_log_enabled: bool = True
@@ -93,6 +94,12 @@ class Config:
     token_limit_warning_threshold: float = 0.9  # Warn at 90% token usage
     default_token_budget: int = 200000  # Default token budget per session
     session_id_format: str = "session_%Y%m%d_%H%M%S"
+
+    # PRD tracking settings
+    prd_auto_create_backup: bool = True
+    prd_reference_check_enabled: bool = True
+    prd_reference_agent_interval: int = 5
+    prd_reference_token_interval: int = 15000
 
     # Storage limits (local)
     max_local_storage_mb: int = 20
@@ -154,6 +161,16 @@ class Config:
         if env_strict := os.getenv("SUBAGENT_STRICT_MODE"):
             self.strict_mode = env_strict.lower() in ("true", "1", "yes")
 
+        # PRD settings
+        if env_prd_backup := os.getenv("SUBAGENT_PRD_AUTO_BACKUP"):
+            self.prd_auto_create_backup = env_prd_backup.lower() in ("true", "1", "yes")
+        if env_prd_ref := os.getenv("SUBAGENT_PRD_REFERENCE_ENABLED"):
+            self.prd_reference_check_enabled = env_prd_ref.lower() in ("true", "1", "yes")
+        if env_prd_agent := os.getenv("SUBAGENT_PRD_REFERENCE_AGENT_INTERVAL"):
+            self.prd_reference_agent_interval = int(env_prd_agent)
+        if env_prd_tokens := os.getenv("SUBAGENT_PRD_REFERENCE_TOKEN_INTERVAL"):
+            self.prd_reference_token_interval = int(env_prd_tokens)
+
     def _maybe_create_legacy_symlink(self) -> None:
         """
         Create a .subagent -> .claude symlink when migrating legacy installs.
@@ -182,6 +199,7 @@ class Config:
         self.analytics_dir = self.claude_dir / "analytics"
         self.credentials_dir = self.claude_dir / "credentials"
         self.handoffs_dir = self.claude_dir / "handoffs"
+        self.requirements_dir = self.claude_dir / "requirements"
 
     def _ensure_directories(self):
         """Create tracking directories if they don't exist."""
@@ -191,6 +209,7 @@ class Config:
             self.analytics_dir,
             self.credentials_dir,
             self.handoffs_dir,
+            self.requirements_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -234,6 +253,14 @@ class Config:
             Path to handoff markdown file
         """
         return self.handoffs_dir / f"{session_id}_handoff.md"
+
+    def get_prd_path(self) -> Path:
+        """Get path for PRD markdown file."""
+        return self.requirements_dir / "PRD.md"
+
+    def get_prd_backup_path(self) -> Path:
+        """Get path for PRD backup markdown file."""
+        return self.requirements_dir / "PRD.backup.md"
 
     def get_credentials_path(self, service: str) -> Path:
         """

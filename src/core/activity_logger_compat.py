@@ -16,6 +16,7 @@ Migration Strategy:
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from contextlib import contextmanager
+import asyncio
 import time
 import threading
 
@@ -25,7 +26,10 @@ from src.core.event_types import (
     TOOL_USED, TOOL_ERROR,
     SNAPSHOT_CREATED, SNAPSHOT_RESTORED,
     SESSION_STARTED, SESSION_ENDED,
-    COST_TRACKED
+    COST_TRACKED,
+    TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
+    TEST_RUN_STARTED, TEST_RUN_COMPLETED,
+    SESSION_SUMMARY
 )
 
 # ============================================================================
@@ -85,6 +89,40 @@ def next_event_id() -> str:
         return f"evt_{_event_counter:03d}"
 
 
+def _ensure_session_id(session_id: Optional[str] = None) -> str:
+    """Ensure a session ID exists and return it."""
+    global _session_id
+    if session_id:
+        _session_id = session_id
+    if _session_id is None:
+        _session_id = generate_session_id()
+    return _session_id
+
+
+def _publish_event(event_type: str, payload: Dict[str, Any], session_id: Optional[str] = None) -> str:
+    """Publish an event to the event bus with consistent metadata."""
+    event_bus = get_event_bus()
+    sid = _ensure_session_id(session_id)
+    event_id = payload.get("event_id") or next_event_id()
+
+    event_payload = {**payload, "event_id": event_id}
+    event = Event(
+        event_type=event_type,
+        timestamp=datetime.now(timezone.utc),
+        payload=event_payload,
+        trace_id=generate_trace_id(),
+        session_id=sid
+    )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(event_bus.publish_async(event))
+    else:
+        event_bus.publish(event)
+    return event_id
+
+
 # ============================================================================
 # Initialization (Backward Compatible)
 # ============================================================================
@@ -112,21 +150,21 @@ def initialize(session_id: Optional[str] = None):
         # Generate or use provided session ID
         _session_id = session_id or generate_session_id()
 
-        # Publish SESSION_STARTED event
-        event_bus = get_event_bus()
-        event = Event(
-            event_type=SESSION_STARTED,
-            timestamp=datetime.now(timezone.utc),
-            payload={"session_id": _session_id},
-            trace_id=generate_trace_id(),
+        _publish_event(
+            SESSION_STARTED,
+            {"session_id": _session_id},
             session_id=_session_id
         )
-        event_bus.publish(event)
+        from src.core.session_summary import publish_session_summary
+        publish_session_summary(
+            summary_type="start",
+            session_id=_session_id,
+        )
 
         _initialized = True
 
 
-def shutdown():
+def shutdown(session_id: Optional[str] = None):
     """
     Shutdown the activity logger.
 
@@ -134,24 +172,32 @@ def shutdown():
     """
     global _initialized
 
-    if not _initialized:
+    if not _initialized and session_id is None:
         return
+    sid = _ensure_session_id(session_id)
 
     # Publish SESSION_ENDED event
-    event_bus = get_event_bus()
-    event = Event(
-        event_type=SESSION_ENDED,
-        timestamp=datetime.now(timezone.utc),
-        payload={
-            "session_id": _session_id,
+    _publish_event(
+        SESSION_ENDED,
+        {
+            "session_id": sid,
             "duration_minutes": 0.0,  # TODO: Track actual duration
             "total_tokens": 0,  # TODO: Track actual tokens
             "events_logged": _event_counter
         },
-        trace_id=generate_trace_id(),
-        session_id=_session_id
+        session_id=sid
     )
-    event_bus.publish(event)
+
+    from src.core.session_summary import publish_session_summary
+    publish_session_summary(
+        summary_type="end",
+        session_id=sid,
+        summary_data_extra={
+            "session_id": sid,
+            "events_logged": _event_counter,
+            "ended_at": get_iso_timestamp(),
+        },
+    )
 
     _initialized = False
 
@@ -580,6 +626,136 @@ def log_context_snapshot(tokens_before: int, tokens_after: int, tokens_consumed:
             "files_count": len(files_in_context)
         }
     )
+
+
+# ============================================================================
+# Task and Test Events (Quick Wins)
+# ============================================================================
+
+def log_task_started(
+    task_id: str,
+    task_name: str,
+    stage: str,
+    summary: Optional[str] = None,
+    eta_minutes: Optional[float] = None,
+    owner: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log task started event."""
+    payload = {
+        "task_id": task_id,
+        "task_name": task_name,
+        "stage": stage,
+        "summary": summary,
+        "eta_minutes": eta_minutes,
+        "owner": owner,
+    }
+    payload.update(kwargs)
+    return _publish_event(TASK_STARTED, payload, session_id=session_id)
+
+
+def log_task_stage_changed(
+    task_id: str,
+    stage: str,
+    task_name: Optional[str] = None,
+    previous_stage: Optional[str] = None,
+    summary: Optional[str] = None,
+    progress_pct: Optional[float] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log task stage change event."""
+    payload = {
+        "task_id": task_id,
+        "task_name": task_name,
+        "stage": stage,
+        "previous_stage": previous_stage,
+        "summary": summary,
+        "progress_pct": progress_pct,
+    }
+    payload.update(kwargs)
+    return _publish_event(TASK_STAGE_CHANGED, payload, session_id=session_id)
+
+
+def log_task_completed(
+    task_id: str,
+    status: str,
+    task_name: Optional[str] = None,
+    summary: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log task completion event."""
+    payload = {
+        "task_id": task_id,
+        "task_name": task_name,
+        "status": status,
+        "summary": summary,
+        "duration_ms": duration_ms,
+    }
+    payload.update(kwargs)
+    return _publish_event(TASK_COMPLETED, payload, session_id=session_id)
+
+
+def log_test_run_started(
+    test_suite: str,
+    task_id: Optional[str] = None,
+    command: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log test run started event."""
+    payload = {
+        "test_suite": test_suite,
+        "task_id": task_id,
+        "command": command,
+    }
+    payload.update(kwargs)
+    return _publish_event(TEST_RUN_STARTED, payload, session_id=session_id)
+
+
+def log_test_run_completed(
+    test_suite: str,
+    status: str,
+    task_id: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    passed: Optional[int] = None,
+    failed: Optional[int] = None,
+    summary: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log test run completed event."""
+    payload = {
+        "test_suite": test_suite,
+        "task_id": task_id,
+        "status": status,
+        "duration_ms": duration_ms,
+        "passed": passed,
+        "failed": failed,
+        "summary": summary,
+    }
+    payload.update(kwargs)
+    return _publish_event(TEST_RUN_COMPLETED, payload, session_id=session_id)
+
+
+def log_session_summary(
+    summary_type: str,
+    summary_text: str,
+    summary_data: Optional[Dict[str, Any]] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log session summary event."""
+    payload = {
+        "summary_type": summary_type,
+        "summary_text": summary_text,
+        "summary_data": summary_data,
+    }
+    payload.update(kwargs)
+    return _publish_event(SESSION_SUMMARY, payload, session_id=session_id)
 
 
 # ============================================================================

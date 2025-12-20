@@ -1300,6 +1300,53 @@ def log_validation(
     return _write_event(event, "validation")
 
 
+def log_requirement_reference(
+    agent: str,
+    trigger: str,
+    requirement_ids: List[str],
+    context: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """
+    Log a PRD requirement reference check event.
+
+    Args:
+        agent: Agent performing the reference check
+        trigger: Trigger reason (e.g., "agent_count_5")
+        requirement_ids: List of requirement IDs referenced
+        context: Optional current work context
+        **kwargs: Additional fields to include in event
+
+    Returns:
+        Event ID
+    """
+    if not _event_counter or not _session_id:
+        initialize()
+
+    event_id = _event_counter.next_id()
+    parent_id = _get_parent_stack()[-1] if _get_parent_stack() else None
+
+    event = {
+        "event_type": "requirement_reference",
+        "timestamp": get_iso_timestamp(),
+        "session_id": _session_id,
+        "event_id": event_id,
+        "parent_event_id": parent_id,
+        "agent": agent,
+        "trigger": trigger,
+        "requirement_ids": requirement_ids,
+    }
+
+    if context:
+        event["context"] = context
+
+    for key, value in kwargs.items():
+        if key not in event:
+            event[key] = value
+
+    return _write_event(event, "requirement_reference")
+
+
 # ============================================================================
 # Context Manager Support
 # ============================================================================

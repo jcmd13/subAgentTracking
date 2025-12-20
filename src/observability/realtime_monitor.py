@@ -35,19 +35,27 @@ from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Set, Optional, Any, Callable, List
+from typing import Dict, Set, Optional, Any, Callable, List, TYPE_CHECKING
 from uuid import uuid4
 
 try:
     import websockets
-    from websockets.server import WebSocketServerProtocol
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
+    websockets = None
     WEBSOCKETS_AVAILABLE = False
-    WebSocketServerProtocol = Any  # Type stub
+
+if TYPE_CHECKING:
+    try:
+        from websockets.server import ServerConnection as WebSocketConnection
+    except Exception:
+        from websockets.server import WebSocketServerProtocol as WebSocketConnection
+else:
+    WebSocketConnection = Any  # Runtime type stub
 
 from src.core.event_bus import EventHandler, Event, get_event_bus
 from src.core.event_types import ALL_EVENT_TYPES
+from src.observability.metrics_aggregator import get_metrics_aggregator
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +104,9 @@ class EventFilter:
 class ClientSubscription:
     """Client subscription state."""
     client_id: str
-    websocket: WebSocketServerProtocol
+    websocket: WebSocketConnection
     filters: List[EventFilter] = field(default_factory=list)
+    window_size: int = 300
     connected_at: float = field(default_factory=time.time)
     events_sent: int = 0
     last_event_at: Optional[float] = None
@@ -133,7 +142,9 @@ class RealtimeMonitor(EventHandler):
         port: int = 8765,
         max_connections: int = 100,
         buffer_size: int = 100,
-        auto_subscribe: bool = True
+        auto_subscribe: bool = True,
+        metrics_interval: float = 1.0,
+        default_window_size: int = 300
     ):
         """
         Initialize real-time monitor.
@@ -144,6 +155,8 @@ class RealtimeMonitor(EventHandler):
             max_connections: Maximum concurrent connections
             buffer_size: Event buffer size per client
             auto_subscribe: Auto-subscribe to event bus on start
+            metrics_interval: Seconds between metrics updates (0 to disable)
+            default_window_size: Default metrics window size for clients
         """
         if not WEBSOCKETS_AVAILABLE:
             raise ImportError(
@@ -158,6 +171,9 @@ class RealtimeMonitor(EventHandler):
         self.max_connections = max_connections
         self.buffer_size = buffer_size
         self.auto_subscribe = auto_subscribe
+        self.metrics_interval = metrics_interval
+        self.default_window_size = default_window_size
+        self._metrics_task: Optional[asyncio.Task] = None
 
         # Connection management
         self.clients: Dict[str, ClientSubscription] = {}
@@ -232,6 +248,10 @@ class RealtimeMonitor(EventHandler):
             for event_type in ALL_EVENT_TYPES:
                 event_bus.subscribe(event_type, self)
 
+        # Start metrics loop
+        if self.metrics_interval and self.metrics_interval > 0:
+            self._metrics_task = asyncio.create_task(self._metrics_loop())
+
         logger.info(f"RealtimeMonitor started: ws://{self.host}:{self.port}")
 
     async def stop(self) -> None:
@@ -261,6 +281,15 @@ class RealtimeMonitor(EventHandler):
             for event_type in ALL_EVENT_TYPES:
                 event_bus.unsubscribe(event_type, self)
 
+        # Stop metrics loop
+        if self._metrics_task:
+            self._metrics_task.cancel()
+            try:
+                await self._metrics_task
+            except asyncio.CancelledError:
+                pass
+            self._metrics_task = None
+
         self.running = False
         logger.info("RealtimeMonitor stopped")
 
@@ -286,7 +315,7 @@ class RealtimeMonitor(EventHandler):
 
     async def _handle_client(
         self,
-        websocket: WebSocketServerProtocol,
+        websocket: WebSocketConnection,
         path: str
     ) -> None:
         """Handle WebSocket client connection."""
@@ -304,9 +333,15 @@ class RealtimeMonitor(EventHandler):
             return
 
         # Register client
+        default_window = self.default_window_size
+        aggregator = get_metrics_aggregator()
+        if aggregator and default_window not in aggregator.window_sizes:
+            default_window = aggregator.window_sizes[0]
+
         client = ClientSubscription(
             client_id=client_id,
-            websocket=websocket
+            websocket=websocket,
+            window_size=default_window
         )
         self.clients[client_id] = client
         self.connection_count += 1
@@ -349,8 +384,41 @@ class RealtimeMonitor(EventHandler):
             msg_type = data.get("type")
 
             if msg_type == "subscribe":
-                # Add filter
-                filter_type = FilterType(data.get("filter_type"))
+                # Add filters (supports single or list-based formats)
+                if "filters" in data:
+                    client.filters = []
+                    for raw_filter in data.get("filters", []) or []:
+                        filter_type_value = raw_filter.get("filter_type")
+                        if not filter_type_value:
+                            continue
+                        try:
+                            filter_type = FilterType(filter_type_value)
+                        except ValueError:
+                            continue
+                        values = set(raw_filter.get("values", []))
+                        client.filters.append(
+                            EventFilter(filter_type=filter_type, values=values)
+                        )
+
+                    await self._send_message(client.websocket, {
+                        "type": "subscribed",
+                        "filters": [
+                            {"filter_type": f.filter_type.value, "values": list(f.values)}
+                            for f in client.filters
+                        ]
+                    })
+                    return
+
+                filter_type_value = data.get("filter_type")
+                if not filter_type_value:
+                    client.filters = []
+                    await self._send_message(client.websocket, {
+                        "type": "subscribed",
+                        "filters": []
+                    })
+                    return
+
+                filter_type = FilterType(filter_type_value)
                 values = set(data.get("values", []))
 
                 filter_obj = EventFilter(filter_type=filter_type, values=values)
@@ -385,6 +453,24 @@ class RealtimeMonitor(EventHandler):
                 await self._send_message(client.websocket, {
                     "type": "pong",
                     "server_time": datetime.now().isoformat()
+                })
+            elif msg_type == "set_window":
+                window_size = data.get("window_size")
+                try:
+                    window_size = int(window_size)
+                    if window_size <= 0:
+                        raise ValueError
+                except (TypeError, ValueError):
+                    await self._send_message(client.websocket, {
+                        "type": "error",
+                        "message": "window_size must be a positive integer"
+                    })
+                    return
+
+                client.window_size = window_size
+                await self._send_message(client.websocket, {
+                    "type": "window_set",
+                    "window_size": window_size
                 })
 
             else:
@@ -423,9 +509,68 @@ class RealtimeMonitor(EventHandler):
         except Exception as e:
             logger.error(f"Error sending event to {client.client_id}: {e}")
 
+    async def _metrics_loop(self) -> None:
+        """Periodically send aggregated metrics to connected clients."""
+        try:
+            while self.running:
+                if not self.clients:
+                    await asyncio.sleep(self.metrics_interval)
+                    continue
+
+                aggregator = get_metrics_aggregator()
+                if not aggregator:
+                    await asyncio.sleep(self.metrics_interval)
+                    continue
+
+                window_map: Dict[int, List[ClientSubscription]] = {}
+                for client in self.clients.values():
+                    window_size = self._resolve_window_size(client.window_size, aggregator)
+                    window_map.setdefault(window_size, []).append(client)
+
+                snapshots: Dict[int, Dict[str, Any]] = {}
+                for window_size in window_map:
+                    try:
+                        snapshot = aggregator.get_current_stats(window_size=window_size)
+                        snapshots[window_size] = self._snapshot_to_dict(snapshot)
+                    except Exception as e:
+                        logger.debug("Metrics snapshot failed for window %s: %s", window_size, e)
+
+                for window_size, clients in window_map.items():
+                    metrics = snapshots.get(window_size)
+                    if metrics is None:
+                        continue
+                    message = {
+                        "type": "metrics",
+                        "window_size": window_size,
+                        "metrics": metrics
+                    }
+                    for client in clients:
+                        try:
+                            await self._send_message(client.websocket, message)
+                        except Exception as e:
+                            logger.debug("Error sending metrics to %s: %s", client.client_id, e)
+
+                await asyncio.sleep(self.metrics_interval)
+        except asyncio.CancelledError:
+            return
+
+    def _resolve_window_size(self, requested: Optional[int], aggregator) -> int:
+        """Resolve a requested metrics window to a valid aggregator window."""
+        if requested and requested in aggregator.window_sizes:
+            return requested
+        if aggregator.window_sizes:
+            return aggregator.window_sizes[0]
+        return requested or self.default_window_size
+
+    def _snapshot_to_dict(self, snapshot) -> Dict[str, Any]:
+        """Convert MetricsSnapshot to JSON-serializable dict."""
+        data = asdict(snapshot)
+        data["events_by_type"] = dict(snapshot.events_by_type or {})
+        return data
+
     async def _send_message(
         self,
-        websocket: WebSocketServerProtocol,
+        websocket: WebSocketConnection,
         data: Dict[str, Any]
     ) -> None:
         """Send JSON message to WebSocket client."""
@@ -492,7 +637,10 @@ def initialize_realtime_monitor(
     host: str = "localhost",
     port: int = 8765,
     max_connections: int = 100,
-    buffer_size: int = 100
+    buffer_size: int = 100,
+    auto_subscribe: bool = True,
+    metrics_interval: float = 1.0,
+    default_window_size: int = 300
 ) -> RealtimeMonitor:
     """
     Initialize global real-time monitor instance.
@@ -502,6 +650,9 @@ def initialize_realtime_monitor(
         port: WebSocket server port
         max_connections: Maximum concurrent connections
         buffer_size: Event buffer size per client
+        auto_subscribe: Auto-subscribe to event bus on start
+        metrics_interval: Seconds between metrics updates (0 to disable)
+        default_window_size: Default metrics window size for clients
 
     Returns:
         RealtimeMonitor instance
@@ -516,7 +667,10 @@ def initialize_realtime_monitor(
         host=host,
         port=port,
         max_connections=max_connections,
-        buffer_size=buffer_size
+        buffer_size=buffer_size,
+        auto_subscribe=auto_subscribe,
+        metrics_interval=metrics_interval,
+        default_window_size=default_window_size
     )
 
     return _monitor_instance

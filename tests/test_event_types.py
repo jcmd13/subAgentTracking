@@ -5,8 +5,8 @@ Links Back To: Main Plan → Phase 1 → Task 1.2 → Testing Requirements
 Coverage Target: 100% on event_types module
 
 Test Categories:
-1. Valid Payload Tests (20 tests - one per event type)
-2. Invalid Payload Tests (40 tests - 2 per event type)
+1. Valid Payload Tests (30 tests - one per event type)
+2. Invalid Payload Tests (60 tests - 2 per event type)
 3. Schema Utility Functions (6 tests)
 4. Edge Cases (4 tests)
 """
@@ -19,6 +19,10 @@ from src.core.event_types import (
     SNAPSHOT_CREATED, SNAPSHOT_RESTORED, SNAPSHOT_FAILED, SNAPSHOT_CLEANUP,
     SESSION_STARTED, SESSION_TOKEN_WARNING, SESSION_HANDOFF_REQUIRED, SESSION_ENDED,
     COST_TRACKED, COST_BUDGET_WARNING, COST_OPTIMIZATION_OPPORTUNITY,
+    WORKFLOW_STARTED, WORKFLOW_COMPLETED,
+    TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
+    TEST_RUN_STARTED, TEST_RUN_COMPLETED,
+    SESSION_SUMMARY, REFERENCE_CHECK_TRIGGERED, REFERENCE_CHECK_COMPLETED,
     ALL_EVENT_TYPES,
     # Validation functions
     validate_event_payload, get_schema, get_all_event_types,
@@ -28,7 +32,7 @@ from src.core.event_types import (
 
 
 # ============================================================================
-# Category 1: Valid Payload Tests (20 tests - one per event type)
+# Category 1: Valid Payload Tests (30 tests - one per event type)
 # ============================================================================
 
 def test_agent_invoked_valid():
@@ -253,8 +257,109 @@ def test_cost_optimization_opportunity_valid():
     assert validate_event_payload(COST_OPTIMIZATION_OPPORTUNITY, payload) is True
 
 
+def test_workflow_started_valid():
+    """Test valid WORKFLOW_STARTED payload"""
+    payload = {
+        "workflow_id": "wf_123",
+        "task_count": 3
+    }
+    assert validate_event_payload(WORKFLOW_STARTED, payload) is True
+
+
+def test_workflow_completed_valid():
+    """Test valid WORKFLOW_COMPLETED payload"""
+    payload = {
+        "workflow_id": "wf_123",
+        "task_count": 3
+    }
+    assert validate_event_payload(WORKFLOW_COMPLETED, payload) is True
+
+
+def test_task_started_valid():
+    """Test valid TASK_STARTED payload"""
+    payload = {
+        "task_id": "task_001",
+        "task_name": "Implement dashboard",
+        "stage": "plan"
+    }
+    assert validate_event_payload(TASK_STARTED, payload) is True
+
+
+def test_task_stage_changed_valid():
+    """Test valid TASK_STAGE_CHANGED payload"""
+    payload = {
+        "task_id": "task_001",
+        "stage": "implement",
+        "previous_stage": "plan",
+        "progress_pct": 40.0
+    }
+    assert validate_event_payload(TASK_STAGE_CHANGED, payload) is True
+
+
+def test_task_completed_valid():
+    """Test valid TASK_COMPLETED payload"""
+    payload = {
+        "task_id": "task_001",
+        "status": "success",
+        "summary": "Implemented key flows"
+    }
+    assert validate_event_payload(TASK_COMPLETED, payload) is True
+
+
+def test_test_run_started_valid():
+    """Test valid TEST_RUN_STARTED payload"""
+    payload = {
+        "test_suite": "unit",
+        "task_id": "task_001",
+        "command": "pytest tests/"
+    }
+    assert validate_event_payload(TEST_RUN_STARTED, payload) is True
+
+
+def test_test_run_completed_valid():
+    """Test valid TEST_RUN_COMPLETED payload"""
+    payload = {
+        "test_suite": "unit",
+        "status": "passed",
+        "passed": 120,
+        "failed": 0
+    }
+    assert validate_event_payload(TEST_RUN_COMPLETED, payload) is True
+
+
+def test_session_summary_valid():
+    """Test valid SESSION_SUMMARY payload"""
+    payload = {
+        "summary_type": "end",
+        "summary_text": "Session ended cleanly",
+        "summary_data": {"events_total": 20}
+    }
+    assert validate_event_payload(SESSION_SUMMARY, payload) is True
+
+
+def test_reference_check_triggered_valid():
+    """Test valid REFERENCE_CHECK_TRIGGERED payload"""
+    payload = {
+        "trigger": "agent_count_5",
+        "agent_count": 10,
+        "token_count": 15000
+    }
+    assert validate_event_payload(REFERENCE_CHECK_TRIGGERED, payload) is True
+
+
+def test_reference_check_completed_valid():
+    """Test valid REFERENCE_CHECK_COMPLETED payload"""
+    payload = {
+        "trigger": "agent_count_5",
+        "requirement_count": 3,
+        "prompt_length": 120,
+        "reference_number": 1
+    }
+    assert validate_event_payload(REFERENCE_CHECK_COMPLETED, payload) is True
+
+
 # ============================================================================
-# Category 2: Invalid Payload Tests (40 tests - 2 per event type)
+# Category 2: Invalid Payload Tests (56 tests - 2 per event type)
 # ============================================================================
 
 def test_agent_invoked_missing_required():
@@ -672,16 +777,206 @@ def test_cost_optimization_opportunity_negative_savings():
         validate_event_payload(COST_OPTIMIZATION_OPPORTUNITY, payload)
 
 
+def test_workflow_started_missing_task_count():
+    """Test WORKFLOW_STARTED missing task_count"""
+    payload = {
+        "workflow_id": "wf_123"
+    }
+    with pytest.raises(EventValidationError, match="task_count"):
+        validate_event_payload(WORKFLOW_STARTED, payload)
+
+
+def test_workflow_started_invalid_task_count():
+    """Test WORKFLOW_STARTED with invalid task_count"""
+    payload = {
+        "workflow_id": "wf_123",
+        "task_count": 0
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(WORKFLOW_STARTED, payload)
+
+
+def test_workflow_completed_missing_workflow_id():
+    """Test WORKFLOW_COMPLETED missing workflow_id"""
+    payload = {
+        "task_count": 3
+    }
+    with pytest.raises(EventValidationError, match="workflow_id"):
+        validate_event_payload(WORKFLOW_COMPLETED, payload)
+
+
+def test_workflow_completed_invalid_task_count():
+    """Test WORKFLOW_COMPLETED with invalid task_count"""
+    payload = {
+        "workflow_id": "wf_123",
+        "task_count": 0
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(WORKFLOW_COMPLETED, payload)
+
+
+def test_task_started_missing_task_name():
+    """Test TASK_STARTED missing task_name"""
+    payload = {
+        "task_id": "task_001",
+        "stage": "plan"
+    }
+    with pytest.raises(EventValidationError, match="task_name"):
+        validate_event_payload(TASK_STARTED, payload)
+
+
+def test_task_started_missing_stage():
+    """Test TASK_STARTED missing stage"""
+    payload = {
+        "task_id": "task_001",
+        "task_name": "Build UI"
+    }
+    with pytest.raises(EventValidationError, match="stage"):
+        validate_event_payload(TASK_STARTED, payload)
+
+
+def test_task_stage_changed_missing_stage():
+    """Test TASK_STAGE_CHANGED missing stage"""
+    payload = {
+        "task_id": "task_001"
+    }
+    with pytest.raises(EventValidationError, match="stage"):
+        validate_event_payload(TASK_STAGE_CHANGED, payload)
+
+
+def test_task_stage_changed_invalid_progress():
+    """Test TASK_STAGE_CHANGED with invalid progress"""
+    payload = {
+        "task_id": "task_001",
+        "stage": "implement",
+        "progress_pct": 150
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(TASK_STAGE_CHANGED, payload)
+
+
+def test_task_completed_missing_status():
+    """Test TASK_COMPLETED missing status"""
+    payload = {
+        "task_id": "task_001"
+    }
+    with pytest.raises(EventValidationError, match="status"):
+        validate_event_payload(TASK_COMPLETED, payload)
+
+
+def test_task_completed_invalid_status():
+    """Test TASK_COMPLETED with invalid status"""
+    payload = {
+        "task_id": "task_001",
+        "status": "done"
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(TASK_COMPLETED, payload)
+
+
+def test_test_run_started_missing_test_suite():
+    """Test TEST_RUN_STARTED missing test_suite"""
+    payload = {}
+    with pytest.raises(EventValidationError, match="test_suite"):
+        validate_event_payload(TEST_RUN_STARTED, payload)
+
+
+def test_test_run_started_invalid_test_suite():
+    """Test TEST_RUN_STARTED with invalid test_suite"""
+    payload = {
+        "test_suite": 123
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(TEST_RUN_STARTED, payload)
+
+
+def test_test_run_completed_missing_status():
+    """Test TEST_RUN_COMPLETED missing status"""
+    payload = {
+        "test_suite": "unit"
+    }
+    with pytest.raises(EventValidationError, match="status"):
+        validate_event_payload(TEST_RUN_COMPLETED, payload)
+
+
+def test_test_run_completed_invalid_status():
+    """Test TEST_RUN_COMPLETED with invalid status"""
+    payload = {
+        "test_suite": "unit",
+        "status": "ok"
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(TEST_RUN_COMPLETED, payload)
+
+
+def test_session_summary_missing_text():
+    """Test SESSION_SUMMARY missing summary_text"""
+    payload = {
+        "summary_type": "start"
+    }
+    with pytest.raises(EventValidationError, match="summary_text"):
+        validate_event_payload(SESSION_SUMMARY, payload)
+
+
+def test_session_summary_invalid_type():
+    """Test SESSION_SUMMARY with invalid summary_type"""
+    payload = {
+        "summary_type": "mid",
+        "summary_text": "Mid-session summary"
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(SESSION_SUMMARY, payload)
+
+
+def test_reference_check_triggered_missing_trigger():
+    """Test REFERENCE_CHECK_TRIGGERED missing trigger"""
+    payload = {
+        "agent_count": 5
+    }
+    with pytest.raises(EventValidationError, match="trigger"):
+        validate_event_payload(REFERENCE_CHECK_TRIGGERED, payload)
+
+
+def test_reference_check_triggered_invalid_agent_count():
+    """Test REFERENCE_CHECK_TRIGGERED with invalid agent_count"""
+    payload = {
+        "trigger": "agent_count_5",
+        "agent_count": -1
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(REFERENCE_CHECK_TRIGGERED, payload)
+
+
+def test_reference_check_completed_missing_requirement_count():
+    """Test REFERENCE_CHECK_COMPLETED missing requirement_count"""
+    payload = {
+        "trigger": "agent_count_5"
+    }
+    with pytest.raises(EventValidationError, match="requirement_count"):
+        validate_event_payload(REFERENCE_CHECK_COMPLETED, payload)
+
+
+def test_reference_check_completed_invalid_requirement_count():
+    """Test REFERENCE_CHECK_COMPLETED with invalid requirement_count"""
+    payload = {
+        "trigger": "agent_count_5",
+        "requirement_count": -1
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(REFERENCE_CHECK_COMPLETED, payload)
+
+
 # ============================================================================
 # Category 3: Schema Utility Functions (6 tests)
 # ============================================================================
 
 def test_get_all_event_types():
-    """Test get_all_event_types returns all 20 event types"""
+    """Test get_all_event_types returns all 30 event types"""
     event_types = get_all_event_types()
-    assert len(event_types) == 20
+    assert len(event_types) == 30
     assert AGENT_INVOKED in event_types
     assert COST_OPTIMIZATION_OPPORTUNITY in event_types
+    assert TASK_STARTED in event_types
 
 
 def test_is_valid_event_type():
