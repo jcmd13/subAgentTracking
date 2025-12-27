@@ -5,8 +5,8 @@ Links Back To: Main Plan → Phase 1 → Task 1.2 → Testing Requirements
 Coverage Target: 100% on event_types module
 
 Test Categories:
-1. Valid Payload Tests (30 tests - one per event type)
-2. Invalid Payload Tests (60 tests - 2 per event type)
+1. Valid Payload Tests (33 tests - one per event type)
+2. Invalid Payload Tests (66 tests - 2 per event type)
 3. Schema Utility Functions (6 tests)
 4. Edge Cases (4 tests)
 """
@@ -22,7 +22,8 @@ from src.core.event_types import (
     WORKFLOW_STARTED, WORKFLOW_COMPLETED,
     TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
     TEST_RUN_STARTED, TEST_RUN_COMPLETED,
-    SESSION_SUMMARY, REFERENCE_CHECK_TRIGGERED, REFERENCE_CHECK_COMPLETED,
+    SESSION_SUMMARY, APPROVAL_REQUIRED, APPROVAL_GRANTED, APPROVAL_DENIED,
+    REFERENCE_CHECK_TRIGGERED, REFERENCE_CHECK_COMPLETED,
     ALL_EVENT_TYPES,
     # Validation functions
     validate_event_payload, get_schema, get_all_event_types,
@@ -32,7 +33,7 @@ from src.core.event_types import (
 
 
 # ============================================================================
-# Category 1: Valid Payload Tests (30 tests - one per event type)
+# Category 1: Valid Payload Tests (33 tests - one per event type)
 # ============================================================================
 
 def test_agent_invoked_valid():
@@ -335,6 +336,41 @@ def test_session_summary_valid():
         "summary_data": {"events_total": 20}
     }
     assert validate_event_payload(SESSION_SUMMARY, payload) is True
+
+
+def test_approval_required_valid():
+    """Test valid APPROVAL_REQUIRED payload"""
+    payload = {
+        "approval_id": "appr_123",
+        "tool": "write",
+        "risk_score": 0.8,
+        "reasons": ["delete_operation"],
+        "action": "blocked",
+        "file_path": "src/main.py"
+    }
+    assert validate_event_payload(APPROVAL_REQUIRED, payload) is True
+
+
+def test_approval_granted_valid():
+    """Test valid APPROVAL_GRANTED payload"""
+    payload = {
+        "approval_id": "appr_123",
+        "status": "granted",
+        "actor": "user",
+        "reason": "Approved by lead"
+    }
+    assert validate_event_payload(APPROVAL_GRANTED, payload) is True
+
+
+def test_approval_denied_valid():
+    """Test valid APPROVAL_DENIED payload"""
+    payload = {
+        "approval_id": "appr_456",
+        "status": "denied",
+        "actor": "user",
+        "reason": "Too risky"
+    }
+    assert validate_event_payload(APPROVAL_DENIED, payload) is True
 
 
 def test_reference_check_triggered_valid():
@@ -928,6 +964,50 @@ def test_session_summary_invalid_type():
         validate_event_payload(SESSION_SUMMARY, payload)
 
 
+def test_approval_required_missing_tool():
+    """Test APPROVAL_REQUIRED missing tool"""
+    payload = {
+        "approval_id": "appr_123",
+        "risk_score": 0.9,
+        "reasons": ["delete_operation"],
+        "action": "blocked",
+    }
+    with pytest.raises(EventValidationError, match="tool"):
+        validate_event_payload(APPROVAL_REQUIRED, payload)
+
+
+def test_approval_required_invalid_score():
+    """Test APPROVAL_REQUIRED with invalid risk_score"""
+    payload = {
+        "approval_id": "appr_123",
+        "tool": "write",
+        "risk_score": 1.5,
+        "reasons": ["delete_operation"],
+        "action": "blocked",
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(APPROVAL_REQUIRED, payload)
+
+
+def test_approval_granted_missing_id():
+    """Test APPROVAL_GRANTED missing approval_id"""
+    payload = {
+        "status": "granted"
+    }
+    with pytest.raises(EventValidationError, match="approval_id"):
+        validate_event_payload(APPROVAL_GRANTED, payload)
+
+
+def test_approval_denied_invalid_status():
+    """Test APPROVAL_DENIED with invalid status"""
+    payload = {
+        "approval_id": "appr_123",
+        "status": "granted"
+    }
+    with pytest.raises(EventValidationError):
+        validate_event_payload(APPROVAL_DENIED, payload)
+
+
 def test_reference_check_triggered_missing_trigger():
     """Test REFERENCE_CHECK_TRIGGERED missing trigger"""
     payload = {
@@ -971,12 +1051,13 @@ def test_reference_check_completed_invalid_requirement_count():
 # ============================================================================
 
 def test_get_all_event_types():
-    """Test get_all_event_types returns all 30 event types"""
+    """Test get_all_event_types returns all 33 event types"""
     event_types = get_all_event_types()
-    assert len(event_types) == 30
+    assert len(event_types) == 33
     assert AGENT_INVOKED in event_types
     assert COST_OPTIMIZATION_OPPORTUNITY in event_types
     assert TASK_STARTED in event_types
+    assert APPROVAL_GRANTED in event_types
 
 
 def test_is_valid_event_type():

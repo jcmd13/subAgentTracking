@@ -333,7 +333,7 @@ async def main():
 
     # Save markdown report
     markdown = insight_engine.generate_markdown_report(report)
-    report_path = ".claude/demo_insights_report.md"
+    report_path = ".subagent/demo_insights_report.md"
 
     with open(report_path, 'w') as f:
         f.write(markdown)

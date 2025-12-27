@@ -24,6 +24,7 @@ except Exception:  # pragma: no cover - handled in tests
     Request = None
     MediaIoBaseUpload = None
     GOOGLE_DRIVE_AVAILABLE = False
+    logging.debug("Google Drive client libraries not available; backups disabled.")
 
 from src.core.config import get_config
 from src.core import activity_logger
@@ -41,6 +42,24 @@ class BackupManager:
         self.service: Optional[Any] = None
         self.folder_id: Optional[str] = None
         self.drive_folder_id: Optional[str] = None
+
+    def _get_credentials_path(self) -> Path:
+        """Return the configured credentials path for Google Drive."""
+        if hasattr(self.config, "get_credentials_path"):
+            return self.config.get_credentials_path("google_drive")
+        return self.config.credentials_dir / "google_drive_credentials.json"
+
+    def _get_token_paths(self) -> List[Path]:
+        """Return possible token paths for Google Drive."""
+        token_paths = [self.config.credentials_dir / "google_drive_token.pickle"]
+        if hasattr(self.config, "get_token_path"):
+            token_paths.append(self.config.get_token_path("google_drive"))
+        else:
+            token_paths.append(self.config.credentials_dir / "google_drive_token.json")
+        return token_paths
+
+    def _has_token(self) -> bool:
+        return any(path.exists() for path in self._get_token_paths())
 
     def get_drive_service(self):
         """Gets the Google Drive service using OAuth credentials.
@@ -97,7 +116,11 @@ class BackupManager:
 
     def is_available(self) -> bool:
         """Check if Google Drive backup is configured and accessible."""
-        return bool(GOOGLE_DRIVE_AVAILABLE and getattr(self.config, "backup_enabled", True))
+        if not GOOGLE_DRIVE_AVAILABLE or not getattr(self.config, "backup_enabled", True):
+            return False
+        if self.service and (self.folder_id or self.drive_folder_id):
+            return True
+        return self._has_token()
 
     def get_or_create_folder(
         self, folder_name: str = "SubAgentTracking", parent_id: str = None
@@ -196,6 +219,9 @@ class BackupManager:
 
             # Create a MediaIoBaseUpload instance
             with open(file_path, "rb") as file_fd:
+                if MediaIoBaseUpload is None:
+                    logging.error("Google Drive upload unavailable: missing client library.")
+                    return None
                 media = MediaIoBaseUpload(
                     fd=file_fd,
                     mimetype=mime_type,
@@ -204,7 +230,11 @@ class BackupManager:
                 )
 
                 # Create the request to upload the file
-                request = self.service.files().create(body=file_metadata, media=media, fields="id")
+                request = self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields="id",
+                )
 
                 response = None
                 retry_count = 0
@@ -350,22 +380,42 @@ class BackupManager:
         Returns:
             True if authentication successful, False otherwise.
         """
-        if not self.is_available():
+        if not GOOGLE_DRIVE_AVAILABLE or not getattr(self.config, "backup_enabled", True):
             return False
 
-        credentials_path = self.config.credentials_dir / "google_drive_credentials.json"
-        token_path = self.config.credentials_dir / "google_drive_token.pickle"
+        if self.service and (self.folder_id or self.drive_folder_id):
+            return True
 
-        # No credentials/token available
-        if not token_path.exists() and not credentials_path.exists():
+        credentials_path = self._get_credentials_path()
+        token_pickle_path = self.config.credentials_dir / "google_drive_token.pickle"
+        token_json_path = (
+            self.config.get_token_path("google_drive")
+            if hasattr(self.config, "get_token_path")
+            else self.config.credentials_dir / "google_drive_token.json"
+        )
+
+        if (
+            not token_pickle_path.exists()
+            and not token_json_path.exists()
+            and not credentials_path.exists()
+        ):
             return False
 
         try:
-            if token_path.exists():
-                with open(token_path, "rb") as token_file:
+            creds = None
+            if token_pickle_path.exists():
+                with open(token_pickle_path, "rb") as token_file:
                     creds = pickle.load(token_file)
-            else:
-                creds = None
+            elif token_json_path.exists():
+                try:
+                    from google.oauth2.credentials import Credentials
+                except Exception as e:
+                    logging.debug("Failed to import Google credentials: %s", e, exc_info=True)
+                    return False
+                creds = Credentials.from_authorized_user_file(
+                    str(token_json_path),
+                    scopes=["https://www.googleapis.com/auth/drive.file"],
+                )
 
             if creds is None or not getattr(creds, "valid", True):
                 return False
@@ -378,10 +428,16 @@ class BackupManager:
                 getattr(self.config, "google_drive_folder_name", "SubAgentTracking")
             )
             self.drive_folder_id = self.folder_id
+            if not self.folder_id:
+                self.service = None
+                self.drive_folder_id = None
+                return False
             return True
         except Exception as e:
             logging.error(f"Authentication failed: {e}")
             self.service = None
+            self.folder_id = None
+            self.drive_folder_id = None
             return False
 
     def _create_session_archive(self, session_id: str, compress: bool = True) -> Optional[Path]:
@@ -433,16 +489,38 @@ class BackupManager:
         """Upload a file to Google Drive; returns file ID or None."""
         if not self.service:
             return None
+        if not file_path.exists():
+            logging.error(f"Upload failed: missing file {file_path}")
+            return None
+        if MediaIoBaseUpload is None:
+            logging.error("Upload failed: missing Google Drive client library.")
+            return None
         metadata = {"name": filename or file_path.name}
         if parent_id:
             metadata["parents"] = [parent_id]
+        mime_type = "application/octet-stream"
+        if file_path.suffix in (".gz", ".tgz"):
+            mime_type = "application/gzip"
+        elif file_path.suffix == ".tar":
+            mime_type = "application/x-tar"
         try:
-            create_request = self.service.files().create(body=metadata, fields="id")
-            response = create_request.execute()
-            if isinstance(response, dict):
-                return response.get("id")
-            if hasattr(response, "get"):
-                return response.get("id")
+            with open(file_path, "rb") as file_fd:
+                media = MediaIoBaseUpload(
+                    fd=file_fd,
+                    mimetype=mime_type,
+                    chunksize=1024 * 1024,
+                    resumable=True,
+                )
+                create_request = self.service.files().create(
+                    body=metadata,
+                    media_body=media,
+                    fields="id",
+                )
+                response = create_request.execute()
+                if isinstance(response, dict):
+                    return response.get("id")
+                if hasattr(response, "get"):
+                    return response.get("id")
         except Exception as e:
             logging.error(f"Upload failed: {e}")
         return None
@@ -494,7 +572,8 @@ class BackupManager:
             parent = self.drive_folder_id or self.folder_id
             result = self.service.files().list(q=f"'{parent}' in parents", pageSize=100).execute()
             return result.get("files", [])
-        except Exception:
+        except Exception as e:
+            logging.error("List backups failed: %s", e, exc_info=True)
             return []
 
     def backup_session(
@@ -504,28 +583,51 @@ class BackupManager:
         compress: bool = True
     ) -> dict:
         """Backup an entire session including logs and snapshots."""
-        from datetime import datetime
-
         if not session_id:
             session_id = activity_logger.get_current_session_id()
         if not session_id:
-            return {"success": False, "error": "No session ID available"}
+            return {
+                "success": False,
+                "error": "No session ID available",
+                "error_type": "SessionNotFoundError",
+            }
 
         if not self.is_available():
             return {
                 "success": False,
                 "error": "Google Drive not available",
+                "error_type": "BackupNotAvailableError",
                 "session_id": session_id,
             }
+
+        if not self.service or not (self.folder_id or self.drive_folder_id):
+            if not self.authenticate():
+                return {
+                    "success": False,
+                    "error": "Authentication failed",
+                    "error_type": "BackupAuthenticationError",
+                    "session_id": session_id,
+                }
 
         start = time.time()
         archive_path = self._create_session_archive(session_id, compress=compress)
         if not archive_path or not archive_path.exists():
-            return {"success": False, "error": "Failed to create archive", "session_id": session_id}
+            return {
+                "success": False,
+                "error": "Failed to create archive",
+                "error_type": "BackupError",
+                "session_id": session_id,
+            }
 
-        file_id = None
-        if self.service and self.drive_folder_id:
-            file_id = self._upload_to_drive(archive_path, parent_id=self.drive_folder_id)
+        parent_id = self.drive_folder_id or self.folder_id
+        file_id = self._upload_to_drive(archive_path, parent_id=parent_id)
+        if not file_id:
+            return {
+                "success": False,
+                "error": "Upload failed",
+                "error_type": "BackupUploadError",
+                "session_id": session_id,
+            }
 
         duration_ms = int((time.time() - start) * 1000)
         return {
@@ -539,17 +641,33 @@ class BackupManager:
     def restore_session(self, session_id: str) -> dict:
         """Restore a session archive from Google Drive."""
         if not self.is_available():
-            return {"success": False, "error": "Google Drive not available"}
+            return {
+                "success": False,
+                "error": "Google Drive not available",
+                "error_type": "BackupNotAvailableError",
+            }
         if not self.service or not self.drive_folder_id:
-            return {"success": False, "error": "Service not authenticated"}
+            return {
+                "success": False,
+                "error": "Service not authenticated",
+                "error_type": "BackupAuthenticationError",
+            }
 
         file_id = self._find_session_archive(session_id)
         if not file_id:
-            return {"success": False, "error": "Session archive not found"}
+            return {
+                "success": False,
+                "error": "Session archive not found",
+                "error_type": "BackupNotFoundError",
+            }
 
         dest = self.config.credentials_dir / f"{session_id}.tar.gz"
         if not self._download_from_drive(file_id, dest):
-            return {"success": False, "error": "Download failed"}
+            return {
+                "success": False,
+                "error": "Download failed",
+                "error_type": "BackupDownloadError",
+            }
 
         restored_files = self._extract_session_archive(dest, session_id)
         return {"success": True, "restored_files": restored_files}
@@ -587,5 +705,6 @@ def list_available_backups() -> List[dict]:
         result = manager.service.files().list().execute()
         files = result.get("files", [])
         return files
-    except Exception:
+    except Exception as e:
+        logging.error("List available backups failed: %s", e, exc_info=True)
         return []

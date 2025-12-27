@@ -120,7 +120,7 @@ class AgentCoordinator:
         """Initialize agent coordinator."""
         self.workflows: Dict[str, Workflow] = {}
         self._agent_registry: Dict[str, Callable] = {}
-        self._execution_lock = asyncio.Lock()
+        self._execution_lock: Optional[asyncio.Lock] = None
 
         # Statistics
         self.stats = {

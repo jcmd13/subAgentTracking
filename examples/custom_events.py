@@ -430,5 +430,5 @@ if __name__ == "__main__":
     print("=" * 60)
     print("\nNext steps:")
     print("  • See analytics_queries.py to query the logged data")
-    print("  • Check .claude/logs/ for the activity log")
-    print("  • Check .claude/state/ for snapshots")
+    print("  • Check .subagent/logs/ for the activity log")
+    print("  • Check .subagent/state/ for snapshots")

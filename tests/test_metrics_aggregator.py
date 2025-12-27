@@ -225,7 +225,7 @@ class TestMetricsAggregator:
         start_event = Event(
             event_type=TASK_STARTED,
             timestamp=datetime.utcnow(),
-            payload={"task_id": "task-1", "task_name": "Test task", "stage": "plan"},
+            payload={"task_id": "task-1", "task_name": "Test task", "stage": "plan", "progress_pct": 5},
             trace_id="test-trace",
             session_id="test-session"
         )
@@ -236,7 +236,7 @@ class TestMetricsAggregator:
         stage_event = Event(
             event_type=TASK_STAGE_CHANGED,
             timestamp=datetime.utcnow(),
-            payload={"task_id": "task-1", "stage": "implement"},
+            payload={"task_id": "task-1", "stage": "implement", "progress_pct": 45},
             trace_id="test-trace",
             session_id="test-session"
         )
@@ -254,6 +254,33 @@ class TestMetricsAggregator:
         aggregator.record_event(complete_event)
 
         assert "task-1" not in aggregator.active_tasks
+
+    def test_task_progress_average(self, aggregator):
+        """Should compute average task progress for active tasks."""
+        aggregator.record_event(Event(
+            event_type=TASK_STARTED,
+            timestamp=datetime.utcnow(),
+            payload={"task_id": "task-1", "task_name": "One", "stage": "plan", "progress_pct": 10},
+            trace_id="test-trace",
+            session_id="test-session"
+        ))
+        aggregator.record_event(Event(
+            event_type=TASK_STARTED,
+            timestamp=datetime.utcnow(),
+            payload={"task_id": "task-2", "task_name": "Two", "stage": "plan", "progress_pct": 20},
+            trace_id="test-trace",
+            session_id="test-session"
+        ))
+        aggregator.record_event(Event(
+            event_type=TASK_STAGE_CHANGED,
+            timestamp=datetime.utcnow(),
+            payload={"task_id": "task-1", "stage": "build", "progress_pct": 60},
+            trace_id="test-trace",
+            session_id="test-session"
+        ))
+
+        stats = aggregator.get_current_stats(window_size=60)
+        assert stats.task_progress_avg == pytest.approx(40.0)
 
     def test_test_tracking(self, aggregator):
         """Should track active tests and results."""

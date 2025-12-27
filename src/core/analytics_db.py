@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # Database Schema
 # ============================================================================
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # SQL schema for all tables
 SCHEMA_SQL = """
@@ -165,6 +165,22 @@ CREATE TABLE IF NOT EXISTS validations (
     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
 );
 
+-- Task state tracking
+CREATE TABLE IF NOT EXISTS tasks (
+    task_id TEXT PRIMARY KEY,
+    session_id TEXT,
+    task_name TEXT,
+    stage TEXT,
+    status TEXT,
+    summary TEXT,
+    eta_minutes REAL,
+    owner TEXT,
+    progress_pct REAL,
+    started_at DATETIME,
+    updated_at DATETIME,
+    completed_at DATETIME
+);
+
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_agent_perf_agent ON agent_performance(agent_name, timestamp);
 CREATE INDEX IF NOT EXISTS idx_agent_perf_session ON agent_performance(session_id);
@@ -174,6 +190,8 @@ CREATE INDEX IF NOT EXISTS idx_errors_type ON error_patterns(error_type, timesta
 CREATE INDEX IF NOT EXISTS idx_errors_agent ON error_patterns(agent_name, timestamp);
 CREATE INDEX IF NOT EXISTS idx_files_path ON file_operations(file_path, timestamp);
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 """
 
 
@@ -614,6 +632,65 @@ class AnalyticsDB:
             logger.error("Error inserting validation: %s", e, exc_info=True)
             return False
 
+    def upsert_task_state(
+        self,
+        *,
+        task_id: str,
+        session_id: Optional[str],
+        timestamp: str,
+        task_name: Optional[str] = None,
+        stage: Optional[str] = None,
+        status: Optional[str] = None,
+        summary: Optional[str] = None,
+        eta_minutes: Optional[float] = None,
+        owner: Optional[str] = None,
+        progress_pct: Optional[float] = None,
+        started_at: Optional[str] = None,
+        completed_at: Optional[str] = None,
+    ) -> bool:
+        """Insert or update task state."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO tasks (
+                        task_id, session_id, task_name, stage, status, summary,
+                        eta_minutes, owner, progress_pct, started_at, updated_at, completed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(task_id) DO UPDATE SET
+                        session_id = COALESCE(excluded.session_id, tasks.session_id),
+                        task_name = COALESCE(excluded.task_name, tasks.task_name),
+                        stage = COALESCE(excluded.stage, tasks.stage),
+                        status = COALESCE(excluded.status, tasks.status),
+                        summary = COALESCE(excluded.summary, tasks.summary),
+                        eta_minutes = COALESCE(excluded.eta_minutes, tasks.eta_minutes),
+                        owner = COALESCE(excluded.owner, tasks.owner),
+                        progress_pct = COALESCE(excluded.progress_pct, tasks.progress_pct),
+                        started_at = COALESCE(excluded.started_at, tasks.started_at),
+                        updated_at = excluded.updated_at,
+                        completed_at = COALESCE(excluded.completed_at, tasks.completed_at)
+                """,
+                    (
+                        task_id,
+                        session_id,
+                        task_name,
+                        stage,
+                        status,
+                        summary,
+                        eta_minutes,
+                        owner,
+                        progress_pct,
+                        started_at,
+                        timestamp,
+                        completed_at,
+                    ),
+                )
+            return True
+        except Exception as e:
+            logger.error("Error upserting task state: %s", e, exc_info=True)
+            return False
+
     def insert_session(
         self,
         session_id: str,
@@ -907,6 +984,86 @@ class AnalyticsDB:
             logger.error("Error querying file changes: %s", e, exc_info=True)
             return []
 
+    def get_task_state(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch the latest state for a task."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error("Error querying task state: %s", e, exc_info=True)
+            return None
+
+    def list_tasks(
+        self,
+        status: Optional[str] = None,
+        session_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """List tasks with optional filtering."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                query = "SELECT * FROM tasks WHERE 1=1"
+                params: List[Any] = []
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                if session_id:
+                    query += " AND session_id = ?"
+                    params.append(session_id)
+                query += " ORDER BY updated_at DESC LIMIT ?"
+                params.append(limit)
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error("Error listing tasks: %s", e, exc_info=True)
+            return []
+
+    def get_task_progress_summary(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Return aggregate task progress metrics."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                query = (
+                    "SELECT "
+                    "COUNT(*) as total_tasks, "
+                    "SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END) as active_tasks, "
+                    "SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed_tasks, "
+                    "AVG(CASE WHEN completed_at IS NULL THEN progress_pct END) as avg_progress_active "
+                    "FROM tasks WHERE 1=1"
+                )
+                params: List[Any] = []
+                if session_id:
+                    query += " AND session_id = ?"
+                    params.append(session_id)
+                cursor.execute(query, params)
+                row = cursor.fetchone()
+                if not row:
+                    return {
+                        "total_tasks": 0,
+                        "active_tasks": 0,
+                        "completed_tasks": 0,
+                        "avg_progress_active": 0.0,
+                    }
+                return {
+                    "total_tasks": row["total_tasks"] or 0,
+                    "active_tasks": row["active_tasks"] or 0,
+                    "completed_tasks": row["completed_tasks"] or 0,
+                    "avg_progress_active": row["avg_progress_active"] or 0.0,
+                }
+        except Exception as e:
+            logger.error("Error summarizing task progress: %s", e, exc_info=True)
+            return {
+                "total_tasks": 0,
+                "active_tasks": 0,
+                "completed_tasks": 0,
+                "avg_progress_active": 0.0,
+            }
+
     def get_session_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
         """
         Get summary of a session.
@@ -1047,6 +1204,32 @@ def insert_event(event_type: str, event_data: Dict[str, Any]) -> bool:
             timestamp=event_data.get("timestamp", ""),
             lines_changed=event_data.get("lines_changed"),
             language=event_data.get("language"),
+        )
+
+    elif event_type in {"task.started", "task.stage_changed", "task.completed"}:
+        status = event_data.get("status")
+        stage = event_data.get("stage")
+        started_at = event_data.get("timestamp") if event_type == "task.started" else None
+        completed_at = event_data.get("timestamp") if event_type == "task.completed" else None
+        if event_type == "task.completed" and stage is None:
+            stage = "completed"
+        if event_type == "task.stage_changed" and status is None:
+            status = "in_progress"
+        if event_type == "task.started" and status is None:
+            status = "started"
+        return db.upsert_task_state(
+            task_id=event_data.get("task_id", ""),
+            session_id=event_data.get("session_id"),
+            timestamp=event_data.get("timestamp", ""),
+            task_name=event_data.get("task_name"),
+            stage=stage,
+            status=status,
+            summary=event_data.get("summary"),
+            eta_minutes=event_data.get("eta_minutes"),
+            owner=event_data.get("owner"),
+            progress_pct=event_data.get("progress_pct"),
+            started_at=started_at,
+            completed_at=completed_at,
         )
 
     elif event_type == "decision":

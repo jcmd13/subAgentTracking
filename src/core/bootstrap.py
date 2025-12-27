@@ -23,6 +23,27 @@ _DEFAULT_CLI_CONFIG: Dict[str, Any] = {
     "status": {"watch_interval": 2.0},
 }
 
+_DEFAULT_PERMISSIONS_CONFIG: Dict[str, Any] = {
+    "permissions": {
+        "default_profile": "default_worker",
+        "profiles": {
+            "default_worker": {
+                "tools": ["read", "write", "edit", "provider"],
+                "paths_allowed": ["src/**", "tests/**"],
+                "paths_forbidden": [".env*", "*.secret", ".subagent/config.yaml"],
+                "can_spawn_subagents": False,
+                "can_modify_tests": False,
+                "can_run_bash": False,
+                "can_access_network": False,
+            },
+            "elevated": {
+                "can_run_bash": True,
+                "can_access_network": True,
+            },
+        },
+    }
+}
+
 _CODEX_PROMPT_NAME = "subagent-init"
 _CODEX_PROMPT_CONTENT = """---
 description: Initialize SubAgent Tracking for this project.
@@ -47,6 +68,7 @@ def _init_dirs(cfg: Config) -> None:
     base = cfg.claude_dir
     subdirs = [
         base,
+        base / "config",
         base / "logs",
         base / "state",
         base / "sessions",
@@ -54,6 +76,8 @@ def _init_dirs(cfg: Config) -> None:
         base / "handoffs",
         base / "quality",
         base / "analytics",
+        base / "approvals",
+        base / "observability",
         base / "credentials",
         base / "requirements",
         base / "hooks",
@@ -105,6 +129,12 @@ def initialize_project(cfg: Optional[Config] = None) -> Dict[str, Any]:
         config_path.write_text(yaml.safe_dump(_DEFAULT_CLI_CONFIG))
         created_config = True
 
+    permissions_path = cfg.claude_dir / "config" / "permissions.yaml"
+    created_permissions = False
+    if not permissions_path.exists():
+        permissions_path.write_text(yaml.safe_dump(_DEFAULT_PERMISSIONS_CONFIG))
+        created_permissions = True
+
     codex_prompt_installed = False
     try:
         codex_prompt_installed = ensure_codex_prompt_installed()
@@ -116,6 +146,7 @@ def initialize_project(cfg: Optional[Config] = None) -> Dict[str, Any]:
         "config_path": str(config_path),
         "data_dir": str(cfg.claude_dir),
         "created_config": created_config,
+        "created_permissions": created_permissions,
         "codex_prompt_installed": codex_prompt_installed,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }

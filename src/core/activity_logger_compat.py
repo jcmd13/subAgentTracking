@@ -16,14 +16,17 @@ Migration Strategy:
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from contextlib import contextmanager
+from uuid import uuid4
 import asyncio
 import time
 import threading
+import logging
 
 from src.core.bootstrap import ensure_initialized
 from src.core.event_bus import Event, get_event_bus
 from src.core.event_types import (
     AGENT_INVOKED, AGENT_COMPLETED, AGENT_FAILED,
+    AGENT_TIMEOUT,
     TOOL_USED, TOOL_ERROR,
     SNAPSHOT_CREATED, SNAPSHOT_RESTORED,
     SESSION_STARTED, SESSION_ENDED,
@@ -31,8 +34,13 @@ from src.core.event_types import (
     TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
     TEST_RUN_STARTED, TEST_RUN_COMPLETED,
     SESSION_SUMMARY,
+    APPROVAL_REQUIRED,
+    APPROVAL_GRANTED,
+    APPROVAL_DENIED,
     REFERENCE_CHECK_TRIGGERED, REFERENCE_CHECK_COMPLETED
 )
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Session and Event ID Management (Backward Compatible)
@@ -125,6 +133,17 @@ def _publish_event(event_type: str, payload: Dict[str, Any], session_id: Optiona
     return event_id
 
 
+def emit_event(
+    event_type: str,
+    payload: Dict[str, Any],
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Emit an arbitrary event type with optional extra payload fields."""
+    payload = {**payload, **kwargs}
+    return _publish_event(event_type, payload, session_id=session_id)
+
+
 # ============================================================================
 # Initialization (Backward Compatible)
 # ============================================================================
@@ -196,15 +215,18 @@ def shutdown(session_id: Optional[str] = None):
     )
 
     from src.core.session_summary import publish_session_summary
-    publish_session_summary(
-        summary_type="end",
-        session_id=sid,
-        summary_data_extra={
-            "session_id": sid,
-            "events_logged": _event_counter,
-            "ended_at": get_iso_timestamp(),
-        },
-    )
+    try:
+        publish_session_summary(
+            summary_type="end",
+            session_id=sid,
+            summary_data_extra={
+                "session_id": sid,
+                "events_logged": _event_counter,
+                "ended_at": get_iso_timestamp(),
+            },
+        )
+    except Exception as e:
+        logger.warning("Failed to publish session summary: %s", e, exc_info=True)
 
     _initialized = False
 
@@ -242,6 +264,7 @@ def log_agent_invocation(
     result: Optional[Dict[str, Any]] = None,
     duration_ms: Optional[int] = None,
     tokens_consumed: Optional[int] = None,
+    session_id: Optional[str] = None,
     **kwargs,
 ) -> str:
     """
@@ -265,10 +288,9 @@ def log_agent_invocation(
     """
     # Auto-initialize if needed
     if not _initialized:
-        initialize()
+        initialize(session_id=session_id)
 
     event_id = next_event_id()
-    event_bus = get_event_bus()
 
     # Choose event type based on status
     if status == "completed":
@@ -311,16 +333,29 @@ def log_agent_invocation(
     payload.update(kwargs)
 
     # Publish event
-    event = Event(
-        event_type=event_type,
-        timestamp=datetime.now(timezone.utc),
-        payload=payload,
-        trace_id=generate_trace_id(),
-        session_id=_session_id
-    )
-    event_bus.publish(event)
+    return _publish_event(event_type, payload, session_id=session_id)
 
-    return event_id
+
+def log_agent_timeout(
+    agent: str,
+    timeout_ms: int,
+    elapsed_ms: Optional[int] = None,
+    partial_output: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log an agent timeout event."""
+    if not _initialized:
+        initialize(session_id=session_id)
+
+    payload = {
+        "agent": agent,
+        "timeout_ms": timeout_ms,
+        "elapsed_ms": elapsed_ms,
+        "partial_output": partial_output,
+    }
+    payload.update(kwargs)
+    return _publish_event(AGENT_TIMEOUT, payload, session_id=session_id)
 
 
 def log_tool_usage(
@@ -332,6 +367,7 @@ def log_tool_usage(
     success: bool = True,
     error_message: Optional[str] = None,
     result_summary: Optional[str] = None,
+    session_id: Optional[str] = None,
     **kwargs,
 ) -> str:
     """
@@ -355,10 +391,9 @@ def log_tool_usage(
     """
     # Auto-initialize if needed
     if not _initialized:
-        initialize()
+        initialize(session_id=session_id)
 
     event_id = next_event_id()
-    event_bus = get_event_bus()
 
     # Choose event type based on success
     if success:
@@ -393,16 +428,7 @@ def log_tool_usage(
     payload.update(kwargs)
 
     # Publish event
-    event = Event(
-        event_type=event_type,
-        timestamp=datetime.now(timezone.utc),
-        payload=payload,
-        trace_id=generate_trace_id(),
-        session_id=_session_id
-    )
-    event_bus.publish(event)
-
-    return event_id
+    return _publish_event(event_type, payload, session_id=session_id)
 
 
 def log_decision(
@@ -763,6 +789,110 @@ def log_session_summary(
     }
     payload.update(kwargs)
     return _publish_event(SESSION_SUMMARY, payload, session_id=session_id)
+
+
+def log_approval_required(
+    tool: str,
+    risk_score: float,
+    reasons: List[str],
+    action: str = "required",
+    approval_id: Optional[str] = None,
+    operation: Optional[str] = None,
+    file_path: Optional[str] = None,
+    agent: Optional[str] = None,
+    profile: Optional[str] = None,
+    requires_network: Optional[bool] = None,
+    requires_bash: Optional[bool] = None,
+    modifies_tests: Optional[bool] = None,
+    summary: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log approval required event."""
+    approval_id = approval_id or f"appr_{uuid4().hex[:10]}"
+    payload = {
+        "approval_id": approval_id,
+        "tool": tool,
+        "operation": operation,
+        "file_path": file_path,
+        "risk_score": risk_score,
+        "reasons": reasons,
+        "action": action,
+        "agent": agent,
+        "profile": profile,
+        "requires_network": requires_network,
+        "requires_bash": requires_bash,
+        "modifies_tests": modifies_tests,
+        "summary": summary,
+    }
+    payload.update(kwargs)
+    return _publish_event(APPROVAL_REQUIRED, payload, session_id=session_id)
+
+
+def log_approval_granted(
+    approval_id: str,
+    *,
+    actor: Optional[str] = None,
+    reason: Optional[str] = None,
+    tool: Optional[str] = None,
+    operation: Optional[str] = None,
+    file_path: Optional[str] = None,
+    risk_score: Optional[float] = None,
+    reasons: Optional[List[str]] = None,
+    summary: Optional[str] = None,
+    decided_at: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log approval granted event."""
+    payload = {
+        "approval_id": approval_id,
+        "status": "granted",
+        "actor": actor,
+        "reason": reason,
+        "tool": tool,
+        "operation": operation,
+        "file_path": file_path,
+        "risk_score": risk_score,
+        "reasons": reasons,
+        "summary": summary,
+        "decided_at": decided_at,
+    }
+    payload.update(kwargs)
+    return _publish_event(APPROVAL_GRANTED, payload, session_id=session_id)
+
+
+def log_approval_denied(
+    approval_id: str,
+    *,
+    actor: Optional[str] = None,
+    reason: Optional[str] = None,
+    tool: Optional[str] = None,
+    operation: Optional[str] = None,
+    file_path: Optional[str] = None,
+    risk_score: Optional[float] = None,
+    reasons: Optional[List[str]] = None,
+    summary: Optional[str] = None,
+    decided_at: Optional[str] = None,
+    session_id: Optional[str] = None,
+    **kwargs,
+) -> str:
+    """Log approval denied event."""
+    payload = {
+        "approval_id": approval_id,
+        "status": "denied",
+        "actor": actor,
+        "reason": reason,
+        "tool": tool,
+        "operation": operation,
+        "file_path": file_path,
+        "risk_score": risk_score,
+        "reasons": reasons,
+        "summary": summary,
+        "decided_at": decided_at,
+    }
+    payload.update(kwargs)
+    return _publish_event(APPROVAL_DENIED, payload, session_id=session_id)
 
 
 def log_reference_check_triggered(

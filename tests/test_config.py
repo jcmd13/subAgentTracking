@@ -81,15 +81,28 @@ class TestConfigDefaults:
         """Test that default paths are correctly set."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
-        assert config.logs_dir == temp_dir / ".claude" / "logs"
-        assert config.state_dir == temp_dir / ".claude" / "state"
-        assert config.analytics_dir == temp_dir / ".claude" / "analytics"
-        assert config.credentials_dir == temp_dir / ".claude" / "credentials"
-        assert config.handoffs_dir == temp_dir / ".claude" / "handoffs"
+        assert config.logs_dir == temp_dir / ".subagent" / "logs"
+        assert config.state_dir == temp_dir / ".subagent" / "state"
+        assert config.analytics_dir == temp_dir / ".subagent" / "analytics"
+        assert config.credentials_dir == temp_dir / ".subagent" / "credentials"
+        assert config.handoffs_dir == temp_dir / ".subagent" / "handoffs"
+        assert config.approvals_dir == temp_dir / ".subagent" / "approvals"
+        assert config.observability_dir == temp_dir / ".subagent" / "observability"
+
+    def test_default_paths_legacy_env_override(self, temp_dir, clean_config, monkeypatch):
+        """Test legacy .claude paths when data dir is explicitly set."""
+        legacy_dir = temp_dir / ".claude"
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("SUBAGENT_DATA_DIR", str(legacy_dir))
+
+        config = Config()
+
+        assert config.claude_dir == legacy_dir
+        assert config.logs_dir == legacy_dir / "logs"
 
     def test_default_settings(self, clean_config):
         """Test that default settings are sensible."""
@@ -182,7 +195,7 @@ class TestPathGeneration:
         """Test activity log path generation."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -195,7 +208,7 @@ class TestPathGeneration:
         """Test analytics database path."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -206,7 +219,7 @@ class TestPathGeneration:
         """Test snapshot path generation."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -221,7 +234,7 @@ class TestPathGeneration:
         """Test handoff summary path generation."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -233,7 +246,7 @@ class TestPathGeneration:
         """Test credentials path generation."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -244,7 +257,7 @@ class TestPathGeneration:
         """Test token path generation."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -259,7 +272,7 @@ class TestValidation:
         """Test that default configuration is valid."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -271,7 +284,7 @@ class TestValidation:
         """Test validation with invalid snapshot agent count."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
         config.snapshot_trigger_agent_count = 0
@@ -284,7 +297,7 @@ class TestValidation:
         """Test validation with invalid snapshot token count."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
         config.snapshot_trigger_token_count = 500
@@ -297,7 +310,7 @@ class TestValidation:
         """Test validation with invalid latency budget."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
         config.event_logging_max_latency_ms = 0.05
@@ -310,7 +323,7 @@ class TestValidation:
         """Test validation with invalid token threshold."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
         config.token_limit_warning_threshold = 1.5
@@ -323,7 +336,7 @@ class TestValidation:
         """Test that strict mode raises ValueError on invalid config."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
         config.strict_mode = True
@@ -342,7 +355,7 @@ class TestConfigurationDict:
         """Test conversion to dictionary."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -358,7 +371,7 @@ class TestConfigurationDict:
         """Test that dictionary contains all important settings."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -437,7 +450,7 @@ class TestDirectoryCreation:
         """Test that directories are created automatically."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 
@@ -451,7 +464,7 @@ class TestDirectoryCreation:
         """Test that .gitkeep files are created in empty directories."""
         config = Config()
         config.project_root = temp_dir
-        config.claude_dir = temp_dir / ".claude"
+        config.claude_dir = temp_dir / ".subagent"
         config._update_tracking_dirs()
         config._ensure_directories()
 

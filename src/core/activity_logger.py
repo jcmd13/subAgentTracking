@@ -259,6 +259,7 @@ class ThreadedJSONLWriter:
 _writer: Optional[ThreadedJSONLWriter] = None
 _session_id: Optional[str] = None
 _event_counter: Optional[EventCounter] = None
+_active_logs_dir: Optional[Path] = None
 # Thread-safe parent event tracking using ContextVars
 _parent_event_var: contextvars.ContextVar[List[str]] = contextvars.ContextVar(
     'parent_event_stack'
@@ -513,13 +514,24 @@ def initialize(session_id: Optional[str] = None):
     Args:
         session_id: Optional custom session ID (default: auto-generated)
     """
-    global _writer, _session_id, _event_counter, _initialized
+    global _writer, _session_id, _event_counter, _initialized, _active_logs_dir
 
     with _init_lock:
-        if _initialized:
-            return
+        try:
+            cfg = config.get_config(reload=True)
+        except TypeError:
+            cfg = config.get_config()
 
-        cfg = config.get_config()
+        if _initialized:
+            if _active_logs_dir and cfg.logs_dir != _active_logs_dir:
+                if _writer:
+                    _writer.shutdown()
+                    _writer = None
+                _initialized = False
+                _session_id = None
+                _event_counter = None
+            else:
+                return
 
         # Always create session ID and event counter (even if logging disabled)
         _session_id = session_id or generate_session_id()
@@ -543,20 +555,19 @@ def initialize(session_id: Optional[str] = None):
             try:
                 rotate_logs()
             except Exception as e:
-                import sys
-
-                print(f"Warning: Log rotation on startup failed: {e}", file=sys.stderr)
+                logger.warning("Log rotation on startup failed: %s", e, exc_info=True)
 
         # Persist session pointer if session_manager is available (best-effort)
         try:
             from src.core import session_manager as _sess
 
             _sess.start_session(session_id=_session_id, metadata={"source": "activity_logger"})
-        except Exception:
+        except Exception as e:
             # Optional dependency; ignore if unavailable
-            pass
+            logger.debug("Failed to initialize session manager: %s", e, exc_info=True)
 
         _initialized = True
+        _active_logs_dir = cfg.logs_dir
 
 
 def shutdown():
@@ -568,33 +579,54 @@ def shutdown():
     """
     global _writer, _initialized
 
-    if not _initialized:
-        return
+    with _init_lock:
+        if not _initialized:
+            return
 
-    # Trigger automatic backup before shutdown (if enabled)
-    try:
-        from src.core.backup_integration import backup_on_shutdown
+        # Trigger automatic backup before shutdown (if enabled)
+        try:
+            from src.core.backup_integration import backup_on_shutdown
 
-        backup_on_shutdown()
-    except ImportError:
-        logger.debug("Backup integration not available during activity logger shutdown")
-    except Exception as e:
-        logger.warning("Backup on shutdown failed; continuing shutdown: %s", e, exc_info=True)
+            backup_on_shutdown()
+        except ImportError:
+            logger.debug("Backup integration not available during activity logger shutdown")
+        except Exception as e:
+            logger.warning("Backup on shutdown failed; continuing shutdown: %s", e, exc_info=True)
+            try:
+                log_error(
+                    agent="activity_logger",
+                    error_type="BackupOnShutdownError",
+                    error_message=str(e),
+                    context={"operation": "backup_on_shutdown"},
+                    severity="medium",
+                )
+            except Exception:
+                logger.debug("Failed to log backup shutdown error event", exc_info=True)
 
-    # Persist handoff summary if session_manager is available
-    try:
-        from src.core import session_manager
-        if _session_id:
-            session_manager.create_handoff(session_id=_session_id, reason="shutdown")
-            session_manager.end_session(session_id=_session_id, status="completed", notes="activity_logger_shutdown")
-    except Exception:
-        logger.debug("Failed to persist handoff/session end during shutdown", exc_info=True)
+        # Persist handoff summary if session_manager is available
+        try:
+            from src.core import session_manager
+            if _session_id:
+                session_manager.create_handoff(session_id=_session_id, reason="shutdown")
+                session_manager.end_session(session_id=_session_id, status="completed", notes="activity_logger_shutdown")
+        except Exception as e:
+            logger.debug("Failed to persist handoff/session end during shutdown: %s", e, exc_info=True)
+            try:
+                log_error(
+                    agent="activity_logger",
+                    error_type="SessionShutdownError",
+                    error_message=str(e),
+                    context={"operation": "session_shutdown"},
+                    severity="low",
+                )
+            except Exception:
+                logger.debug("Failed to log session shutdown error event", exc_info=True)
 
-    if _writer:
-        _writer.shutdown()
-        _writer = None
+        if _writer:
+            _writer.shutdown()
+            _writer = None
 
-    _initialized = False
+        _initialized = False
 
 
 def get_current_session_id() -> Optional[str]:

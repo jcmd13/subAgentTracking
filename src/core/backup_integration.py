@@ -16,13 +16,28 @@ Usage:
 """
 
 from typing import Dict, Any, Optional
-from pathlib import Path
 import logging
 
 from src.core.config import get_config
-from src.core import activity_logger
+from src.core.interfaces import ActivityLogger
 
 logger = logging.getLogger(__name__)
+
+activity_logger: Optional[ActivityLogger] = None
+
+
+def set_activity_logger(logger_instance: Optional[ActivityLogger]) -> None:
+    """Inject an activity logger implementation (used to break import cycles)."""
+    global activity_logger
+    activity_logger = logger_instance
+
+
+def _get_activity_logger() -> ActivityLogger:
+    if activity_logger is None:
+        from src.core import activity_logger as default_logger
+
+        return default_logger
+    return activity_logger
 
 
 def trigger_automatic_backup(
@@ -55,10 +70,11 @@ def trigger_automatic_backup(
         }
     """
     config = get_config()
+    logger_instance = _get_activity_logger()
 
     # Use current session if not specified
     if session_id is None:
-        session_id = activity_logger.get_current_session_id()
+        session_id = logger_instance.get_current_session_id()
 
     result = {
         "attempted": False,
@@ -74,7 +90,7 @@ def trigger_automatic_backup(
         result["skipped_reason"] = "backup_disabled_in_config"
 
         # Log decision to skip
-        activity_logger.log_decision(
+        logger_instance.log_decision(
             agent="backup-integration",
             question="Should automatic backup run?",
             options=["yes", "no (disabled in config)"],
@@ -86,7 +102,7 @@ def trigger_automatic_backup(
         return result
 
     # Log decision to backup
-    activity_logger.log_decision(
+    logger_instance.log_decision(
         agent="backup-integration",
         question="Should automatic backup run?",
         options=["yes (enabled)", "no (disabled)"],
@@ -96,7 +112,7 @@ def trigger_automatic_backup(
     )
 
     # Log backup invocation
-    backup_event_id = activity_logger.log_agent_invocation(
+    backup_event_id = logger_instance.log_agent_invocation(
         agent="backup-manager",
         invoked_by="backup-integration",
         reason=f"Automatic backup: {reason}",
@@ -116,7 +132,7 @@ def trigger_automatic_backup(
             result["error"] = "google_drive_not_available"
             result["skipped_reason"] = "Google Drive API not installed or configured"
 
-            activity_logger.log_error(
+            logger_instance.log_error(
                 agent="backup-manager",
                 error_type="BackupUnavailable",
                 error_message="Google Drive API not available",
@@ -132,7 +148,7 @@ def trigger_automatic_backup(
         if not manager.authenticate():
             result["error"] = "authentication_failed"
 
-            activity_logger.log_error(
+            logger_instance.log_error(
                 agent="backup-manager",
                 error_type="AuthenticationError",
                 error_message="Failed to authenticate with Google Drive",
@@ -154,7 +170,7 @@ def trigger_automatic_backup(
             result["backup_id"] = backup_result.get("file_id")
 
             # Log successful backup
-            activity_logger.log_validation(
+            logger_instance.log_validation(
                 agent="backup-manager",
                 task=f"Backup session {session_id}",
                 validation_type="backup_integrity",
@@ -166,7 +182,7 @@ def trigger_automatic_backup(
         else:
             result["error"] = backup_result.get("error", "unknown_error")
 
-            activity_logger.log_error(
+            logger_instance.log_error(
                 agent="backup-manager",
                 error_type="BackupFailed",
                 error_message=backup_result.get("error", "Unknown backup error"),
@@ -202,7 +218,7 @@ def trigger_automatic_backup(
         except Exception:
             logger.debug("Failed to persist handoff after backup error", exc_info=True)
 
-        activity_logger.log_error(
+        logger_instance.log_error(
             agent="backup-manager",
             error_type="UnexpectedError",
             error_message=str(e),
@@ -287,4 +303,5 @@ __all__ = [
     "should_backup_on_handoff",
     "backup_on_shutdown",
     "backup_on_handoff",
+    "set_activity_logger",
 ]

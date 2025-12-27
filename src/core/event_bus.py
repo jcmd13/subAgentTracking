@@ -94,9 +94,14 @@ class EventBus:
 
     def __init__(self):
         self._subscribers: Dict[str, List[Callable]] = defaultdict(list)
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._event_count = 0
         self._error_count = 0
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     def subscribe(self, event_type: str, handler: Callable) -> None:
         """
@@ -179,7 +184,7 @@ class EventBus:
         """
         start_time = datetime.now(timezone.utc)
 
-        async with self._lock:
+        async with self._get_lock():
             self._event_count += 1
 
         # Get subscribers for this event type
@@ -219,7 +224,7 @@ class EventBus:
                 await handler(event)
             else:
                 # Run sync handler in executor to avoid blocking
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, handler, event)
 
         except Exception as e:

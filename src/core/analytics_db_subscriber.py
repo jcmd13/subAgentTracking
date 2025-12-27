@@ -26,6 +26,7 @@ from src.core.event_types import (
     TOOL_USED, TOOL_ERROR,
     SESSION_STARTED, SESSION_ENDED,
     COST_TRACKED,
+    TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED,
     ALL_EVENT_TYPES
 )
 from src.core.analytics_db import AnalyticsDB
@@ -63,13 +64,18 @@ class AnalyticsDBSubscriber(EventHandler):
         self._error_buffer: List[tuple] = []
         self._session_buffer: List[tuple] = []
 
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._event_count = 0
         self._insert_count = 0
         self._error_count = 0
 
         # Session tracking (in-memory cache)
         self._active_sessions = {}
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def handle(self, event: Event) -> None:
         """
@@ -97,8 +103,11 @@ class AnalyticsDBSubscriber(EventHandler):
             elif event.event_type == COST_TRACKED:
                 await self._handle_cost_event(event)
 
+            elif event.event_type in [TASK_STARTED, TASK_STAGE_CHANGED, TASK_COMPLETED]:
+                await self._handle_task_event(event)
+
             # Check if we should flush buffers
-            async with self._lock:
+            async with self._get_lock():
                 total_buffered = (
                     len(self._agent_perf_buffer) +
                     len(self._tool_usage_buffer) +
@@ -132,7 +141,7 @@ class AnalyticsDBSubscriber(EventHandler):
             success = payload.get("exit_code", 0) == 0
 
         # Buffer agent performance record
-        async with self._lock:
+        async with self._get_lock():
             self._agent_perf_buffer.append((
                 timestamp,
                 event.session_id,
@@ -163,7 +172,7 @@ class AnalyticsDBSubscriber(EventHandler):
         error_msg = payload.get("error_msg") if event.event_type == TOOL_ERROR else None
 
         # Buffer tool usage record
-        async with self._lock:
+        async with self._get_lock():
             self._tool_usage_buffer.append((
                 timestamp,
                 event.session_id,
@@ -179,7 +188,7 @@ class AnalyticsDBSubscriber(EventHandler):
 
         # If error, also buffer error record
         if event.event_type == TOOL_ERROR:
-            async with self._lock:
+            async with self._get_lock():
                 self._error_buffer.append((
                     timestamp,
                     event.session_id,
@@ -213,7 +222,7 @@ class AnalyticsDBSubscriber(EventHandler):
         }
 
         # Buffer session record
-        async with self._lock:
+        async with self._get_lock():
             self._session_buffer.append((
                 event.session_id,
                 timestamp,
@@ -237,7 +246,7 @@ class AnalyticsDBSubscriber(EventHandler):
         timestamp = event.timestamp.isoformat() if hasattr(event.timestamp, 'isoformat') else str(event.timestamp)
 
         # Update session record
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def update_session():
             with self.db.get_connection() as conn:
@@ -276,6 +285,46 @@ class AnalyticsDBSubscriber(EventHandler):
         # For now, we track costs via agent_performance table
         pass
 
+    async def _handle_task_event(self, event: Event) -> None:
+        """
+        Handle task lifecycle events by updating task state.
+
+        Args:
+            event: Task lifecycle event
+        """
+        payload = event.payload
+        timestamp = event.timestamp.isoformat() if hasattr(event.timestamp, "isoformat") else str(event.timestamp)
+        status = payload.get("status")
+        stage = payload.get("stage")
+        started_at = timestamp if event.event_type == TASK_STARTED else None
+        completed_at = timestamp if event.event_type == TASK_COMPLETED else None
+        if event.event_type == TASK_COMPLETED and stage is None:
+            stage = "completed"
+        if event.event_type == TASK_STAGE_CHANGED and status is None:
+            status = "in_progress"
+        if event.event_type == TASK_STARTED and status is None:
+            status = "started"
+
+        loop = asyncio.get_running_loop()
+
+        def upsert_task() -> None:
+            self.db.upsert_task_state(
+                task_id=payload.get("task_id", ""),
+                session_id=event.session_id,
+                timestamp=timestamp,
+                task_name=payload.get("task_name"),
+                stage=stage,
+                status=status,
+                summary=payload.get("summary"),
+                eta_minutes=payload.get("eta_minutes"),
+                owner=payload.get("owner"),
+                progress_pct=payload.get("progress_pct"),
+                started_at=started_at,
+                completed_at=completed_at,
+            )
+
+        await loop.run_in_executor(None, upsert_task)
+
     async def _flush_buffers(self) -> None:
         """
         Flush all buffered events to database (batch insert).
@@ -288,7 +337,7 @@ class AnalyticsDBSubscriber(EventHandler):
         ]):
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def flush_sync():
             """Synchronous batch insert"""
@@ -354,7 +403,7 @@ class AnalyticsDBSubscriber(EventHandler):
         """
         Shutdown subscriber and flush remaining events.
         """
-        async with self._lock:
+        async with self._get_lock():
             if any([self._agent_perf_buffer, self._tool_usage_buffer, self._error_buffer]):
                 await self._flush_buffers()
 

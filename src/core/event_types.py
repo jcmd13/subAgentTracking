@@ -5,7 +5,7 @@ This module defines all event types used in the system with JSON Schema validati
 to ensure payload integrity and consistency.
 
 Design Pattern: Schema-driven validation
-Total Event Types: 30 (5 agent + 4 tool + 4 snapshot + 4 session + 3 cost + 2 workflow + 3 task + 2 test + 1 summary + 2 reference)
+Total Event Types: 33 (5 agent + 4 tool + 4 snapshot + 4 session + 3 cost + 2 workflow + 3 task + 2 test + 1 summary + 3 approval + 2 reference)
 Validation: JSON Schema with jsonschema library
 
 Links Back To: Main Plan → Phase 1 → Task 1.2
@@ -67,6 +67,11 @@ TEST_RUN_COMPLETED = "test.run_completed"
 # Session Summary Events (1 type)
 SESSION_SUMMARY = "session.summary"
 
+# Approval Events (3 types)
+APPROVAL_REQUIRED = "approval.required"
+APPROVAL_GRANTED = "approval.granted"
+APPROVAL_DENIED = "approval.denied"
+
 # Reference Check Events (2 types)
 REFERENCE_CHECK_TRIGGERED = "reference_check.triggered"
 REFERENCE_CHECK_COMPLETED = "reference_check.completed"
@@ -95,6 +100,9 @@ ALL_EVENT_TYPES = BASE_EVENT_TYPES + [
     TEST_RUN_STARTED,
     TEST_RUN_COMPLETED,
     SESSION_SUMMARY,
+    APPROVAL_REQUIRED,
+    APPROVAL_GRANTED,
+    APPROVAL_DENIED,
     REFERENCE_CHECK_TRIGGERED,
     REFERENCE_CHECK_COMPLETED,
 ]
@@ -1034,6 +1042,185 @@ SESSION_SUMMARY_SCHEMA = {
     "additionalProperties": True
 }
 
+# Schema for APPROVAL_REQUIRED
+APPROVAL_REQUIRED_SCHEMA = {
+    "type": "object",
+    "required": ["approval_id", "tool", "risk_score", "reasons", "action"],
+    "properties": {
+        "approval_id": {
+            "type": "string",
+            "description": "Approval request identifier"
+        },
+        "tool": {
+            "type": "string",
+            "description": "Tool name triggering the approval"
+        },
+        "operation": {
+            "type": "string",
+            "description": "Operation name (optional)"
+        },
+        "file_path": {
+            "type": "string",
+            "description": "Target path (optional)"
+        },
+        "risk_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Normalized risk score"
+        },
+        "reasons": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Reasons contributing to risk"
+        },
+        "action": {
+            "type": "string",
+            "enum": ["required", "blocked"],
+            "description": "Approval action taken"
+        },
+        "agent": {
+            "type": "string",
+            "description": "Agent requesting approval (optional)"
+        },
+        "profile": {
+            "type": "string",
+            "description": "Permission profile used (optional)"
+        },
+        "requires_network": {
+            "type": "boolean",
+            "description": "Network access requested (optional)"
+        },
+        "requires_bash": {
+            "type": "boolean",
+            "description": "Shell access requested (optional)"
+        },
+        "modifies_tests": {
+            "type": "boolean",
+            "description": "Operation modifies tests (optional)"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Short summary of the approval request (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for APPROVAL_GRANTED
+APPROVAL_GRANTED_SCHEMA = {
+    "type": "object",
+    "required": ["approval_id", "status"],
+    "properties": {
+        "approval_id": {
+            "type": "string",
+            "description": "Approval request identifier"
+        },
+        "status": {
+            "type": "string",
+            "enum": ["granted"],
+            "description": "Decision status"
+        },
+        "actor": {
+            "type": "string",
+            "description": "Actor approving the request (optional)"
+        },
+        "reason": {
+            "type": "string",
+            "description": "Decision rationale (optional)"
+        },
+        "tool": {
+            "type": "string",
+            "description": "Tool name associated with approval (optional)"
+        },
+        "operation": {
+            "type": "string",
+            "description": "Operation name (optional)"
+        },
+        "file_path": {
+            "type": "string",
+            "description": "Target path (optional)"
+        },
+        "risk_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Normalized risk score (optional)"
+        },
+        "reasons": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Reasons contributing to risk (optional)"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Short summary of the approval request (optional)"
+        },
+        "decided_at": {
+            "type": "string",
+            "description": "Decision timestamp (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
+# Schema for APPROVAL_DENIED
+APPROVAL_DENIED_SCHEMA = {
+    "type": "object",
+    "required": ["approval_id", "status"],
+    "properties": {
+        "approval_id": {
+            "type": "string",
+            "description": "Approval request identifier"
+        },
+        "status": {
+            "type": "string",
+            "enum": ["denied"],
+            "description": "Decision status"
+        },
+        "actor": {
+            "type": "string",
+            "description": "Actor denying the request (optional)"
+        },
+        "reason": {
+            "type": "string",
+            "description": "Decision rationale (optional)"
+        },
+        "tool": {
+            "type": "string",
+            "description": "Tool name associated with approval (optional)"
+        },
+        "operation": {
+            "type": "string",
+            "description": "Operation name (optional)"
+        },
+        "file_path": {
+            "type": "string",
+            "description": "Target path (optional)"
+        },
+        "risk_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Normalized risk score (optional)"
+        },
+        "reasons": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Reasons contributing to risk (optional)"
+        },
+        "summary": {
+            "type": "string",
+            "description": "Short summary of the approval request (optional)"
+        },
+        "decided_at": {
+            "type": "string",
+            "description": "Decision timestamp (optional)"
+        }
+    },
+    "additionalProperties": True
+}
+
 # Schema for REFERENCE_CHECK_TRIGGERED
 REFERENCE_CHECK_TRIGGERED_SCHEMA = {
     "type": "object",
@@ -1136,6 +1323,11 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     # Session summary events
     SESSION_SUMMARY: SESSION_SUMMARY_SCHEMA,
 
+    # Approval events
+    APPROVAL_REQUIRED: APPROVAL_REQUIRED_SCHEMA,
+    APPROVAL_GRANTED: APPROVAL_GRANTED_SCHEMA,
+    APPROVAL_DENIED: APPROVAL_DENIED_SCHEMA,
+
     # Reference check events
     REFERENCE_CHECK_TRIGGERED: REFERENCE_CHECK_TRIGGERED_SCHEMA,
     REFERENCE_CHECK_COMPLETED: REFERENCE_CHECK_COMPLETED_SCHEMA,
@@ -1219,7 +1411,7 @@ def get_all_event_types() -> List[str]:
     Example:
         >>> event_types = get_all_event_types()
         >>> len(event_types)
-        28
+        33
     """
     return ALL_EVENT_TYPES.copy()
 

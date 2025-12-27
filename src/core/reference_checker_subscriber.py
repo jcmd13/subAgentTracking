@@ -77,7 +77,7 @@ class ReferenceCheckerSubscriber(EventHandler):
         self._reference_count = 0
         self._last_check_agent_count = 0
         self._last_check_token_count = 0
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
 
         # Get or create reference checker
         self._checker = get_reference_checker()
@@ -92,6 +92,11 @@ class ReferenceCheckerSubscriber(EventHandler):
             self.agent_interval,
             self.token_interval,
         )
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def handle(self, event: Event) -> None:
         """
@@ -119,7 +124,7 @@ class ReferenceCheckerSubscriber(EventHandler):
         Args:
             event: AGENT_INVOKED event
         """
-        async with self._lock:
+        async with self._get_lock():
             self._agent_count += 1
 
             # Get agent name from event payload
@@ -150,7 +155,7 @@ class ReferenceCheckerSubscriber(EventHandler):
         payload = event.payload
         tokens_used = payload.get("tokens_used", 0)
 
-        async with self._lock:
+        async with self._get_lock():
             self._token_count = tokens_used
 
             # Check if reference check should be triggered

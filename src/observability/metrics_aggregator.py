@@ -92,6 +92,7 @@ class MetricsSnapshot:
     # Task metrics
     tasks_active: int = 0
     tasks_completed: int = 0
+    task_progress_avg: float = 0.0
 
     # Test metrics
     tests_running: int = 0
@@ -167,6 +168,7 @@ class MetricsAggregator(EventHandler):
         self.active_agents: Dict[str, float] = {}  # agent_id -> start_time
         self.active_tasks: Dict[str, float] = {}  # task_id -> start_time
         self.active_tests: Dict[str, float] = {}  # test_id -> start_time
+        self.task_progress: Dict[str, float] = {}  # task_id -> progress_pct
 
         # Cumulative metrics (all-time)
         self.cumulative_events = 0
@@ -180,7 +182,7 @@ class MetricsAggregator(EventHandler):
         if auto_subscribe:
             event_bus = get_event_bus()
             for event_type in ALL_EVENT_TYPES:
-                event_bus.subscribe(event_type, self)
+                event_bus.subscribe(event_type, self.handle)
 
         logger.info(
             f"MetricsAggregator initialized: "
@@ -275,6 +277,13 @@ class MetricsAggregator(EventHandler):
             success=success
         )
 
+    def _normalize_progress(self, value: Any) -> Optional[float]:
+        try:
+            progress = float(value)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, min(progress, 100.0))
+
     def _update_active_tracking(self, event: Event) -> None:
         """Update active workflow/agent tracking."""
         payload = event.payload
@@ -316,11 +325,18 @@ class MetricsAggregator(EventHandler):
             task_id = payload.get("task_id")
             if task_id:
                 self.active_tasks[task_id] = event.timestamp.timestamp()
+                progress = self._normalize_progress(payload.get("progress_pct"))
+                if progress is None and event.event_type == TASK_STARTED:
+                    progress = 0.0
+                if progress is not None:
+                    self.task_progress[task_id] = progress
 
         elif event.event_type == TASK_COMPLETED:
             task_id = payload.get("task_id")
             if task_id and task_id in self.active_tasks:
                 del self.active_tasks[task_id]
+            if task_id and task_id in self.task_progress:
+                del self.task_progress[task_id]
 
         # Track tests
         test_suite = payload.get("test_suite")
@@ -395,6 +411,8 @@ class MetricsAggregator(EventHandler):
         # Task metrics
         snapshot.tasks_active = len(self.active_tasks)
         snapshot.tasks_completed = snapshot.events_by_type.get(TASK_COMPLETED, 0)
+        if self.task_progress:
+            snapshot.task_progress_avg = sum(self.task_progress.values()) / len(self.task_progress)
 
         # Test metrics
         snapshot.tests_running = len(self.active_tests)
@@ -476,6 +494,7 @@ class MetricsAggregator(EventHandler):
         self.active_agents.clear()
         self.active_tasks.clear()
         self.active_tests.clear()
+        self.task_progress.clear()
         self.cumulative_events = 0
         self.cumulative_tokens = 0
         self.cumulative_cost = 0.0

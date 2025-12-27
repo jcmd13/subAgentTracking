@@ -1,7 +1,7 @@
 """
 Event Schema Definitions for SubAgent Tracking System
 
-This module defines Pydantic models for all 13 event types used in the tracking system:
+This module defines Pydantic models for all 14 event types used in the tracking system:
 1. AgentInvocationEvent - Agent start/completion
 2. ToolUsageEvent - Tool invocation with duration
 3. FileOperationEvent - File create/modify/delete with diffs
@@ -15,6 +15,7 @@ This module defines Pydantic models for all 13 event types used in the tracking 
 11. TestRunStartedEvent - Test run kickoff
 12. TestRunCompletedEvent - Test results
 13. SessionSummaryEvent - Session summary payload
+14. ApprovalRequiredEvent - Approval required for risky action
 
 All events share common fields and are validated using Pydantic for type safety.
 
@@ -426,7 +427,65 @@ class SessionSummaryEvent(BaseEvent):
 
 
 # ============================================================================
-# Event Type 11: Requirement Reference
+# Event Type 11: Approval Events
+# ============================================================================
+
+
+class ApprovalRequiredEvent(BaseEvent):
+    """Tracks an approval requirement for risky actions."""
+
+    event_type: Literal["approval.required"] = "approval.required"
+    approval_id: str = Field(..., description="Approval request identifier")
+    tool: str = Field(..., description="Tool name triggering the approval")
+    risk_score: float = Field(..., description="Normalized risk score (0-1)")
+    reasons: List[str] = Field(..., description="Reasons contributing to risk")
+    action: Literal["required", "blocked"] = Field(..., description="Approval action")
+    operation: Optional[str] = Field(None, description="Operation name")
+    file_path: Optional[str] = Field(None, description="Target path")
+    agent: Optional[str] = Field(None, description="Agent requesting approval")
+    profile: Optional[str] = Field(None, description="Permission profile used")
+    requires_network: Optional[bool] = Field(None, description="Network access requested")
+    requires_bash: Optional[bool] = Field(None, description="Shell access requested")
+    modifies_tests: Optional[bool] = Field(None, description="Operation modifies tests")
+    summary: Optional[str] = Field(None, description="Short approval summary")
+
+
+class ApprovalGrantedEvent(BaseEvent):
+    """Tracks an approval being granted."""
+
+    event_type: Literal["approval.granted"] = "approval.granted"
+    approval_id: str = Field(..., description="Approval request identifier")
+    status: Literal["granted"] = Field(..., description="Decision status")
+    actor: Optional[str] = Field(None, description="Actor approving the request")
+    reason: Optional[str] = Field(None, description="Decision rationale")
+    tool: Optional[str] = Field(None, description="Tool name associated with approval")
+    operation: Optional[str] = Field(None, description="Operation name")
+    file_path: Optional[str] = Field(None, description="Target path")
+    risk_score: Optional[float] = Field(None, description="Normalized risk score (0-1)")
+    reasons: Optional[List[str]] = Field(None, description="Reasons contributing to risk")
+    summary: Optional[str] = Field(None, description="Short approval summary")
+    decided_at: Optional[str] = Field(None, description="Decision timestamp")
+
+
+class ApprovalDeniedEvent(BaseEvent):
+    """Tracks an approval being denied."""
+
+    event_type: Literal["approval.denied"] = "approval.denied"
+    approval_id: str = Field(..., description="Approval request identifier")
+    status: Literal["denied"] = Field(..., description="Decision status")
+    actor: Optional[str] = Field(None, description="Actor denying the request")
+    reason: Optional[str] = Field(None, description="Decision rationale")
+    tool: Optional[str] = Field(None, description="Tool name associated with approval")
+    operation: Optional[str] = Field(None, description="Operation name")
+    file_path: Optional[str] = Field(None, description="Target path")
+    risk_score: Optional[float] = Field(None, description="Normalized risk score (0-1)")
+    reasons: Optional[List[str]] = Field(None, description="Reasons contributing to risk")
+    summary: Optional[str] = Field(None, description="Short approval summary")
+    decided_at: Optional[str] = Field(None, description="Decision timestamp")
+
+
+# ============================================================================
+# Event Type 12: Requirement Reference
 # ============================================================================
 
 
@@ -463,6 +522,9 @@ EVENT_TYPE_REGISTRY: Dict[str, type[BaseEvent]] = {
     "test.run_started": TestRunStartedEvent,
     "test.run_completed": TestRunCompletedEvent,
     "session.summary": SessionSummaryEvent,
+    "approval.required": ApprovalRequiredEvent,
+    "approval.granted": ApprovalGrantedEvent,
+    "approval.denied": ApprovalDeniedEvent,
     "requirement_reference": RequirementReferenceEvent,
 }
 

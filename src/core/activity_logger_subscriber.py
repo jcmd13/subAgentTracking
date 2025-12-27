@@ -59,12 +59,17 @@ class ActivityLoggerSubscriber(EventHandler):
 
         # Event buffer for batch writes
         self._buffer = []
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._write_count = 0
         self._error_count = 0
 
         # Ensure parent directory exists
         self.log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def handle(self, event: Event) -> None:
         """
@@ -81,7 +86,7 @@ class ActivityLoggerSubscriber(EventHandler):
             log_entry = self._event_to_jsonl(event)
 
             # Add to buffer
-            async with self._lock:
+            async with self._get_lock():
                 self._buffer.append(log_entry)
 
                 # Flush if buffer full
@@ -151,7 +156,7 @@ class ActivityLoggerSubscriber(EventHandler):
         Args:
             events: List of event dicts to write
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def write_sync():
             with open(self.log_file_path, "a", encoding="utf-8") as f:
@@ -170,7 +175,7 @@ class ActivityLoggerSubscriber(EventHandler):
         Args:
             events: List of event dicts to write
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def write_sync():
             with gzip.open(self.log_file_path, "at", encoding="utf-8") as f:
@@ -186,7 +191,7 @@ class ActivityLoggerSubscriber(EventHandler):
         """
         Shutdown subscriber and flush remaining events.
         """
-        async with self._lock:
+        async with self._get_lock():
             if self._buffer:
                 await self._flush_buffer()
 

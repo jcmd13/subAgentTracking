@@ -1,7 +1,7 @@
 """
 Comprehensive tests for event schema validation (src/core/schemas.py)
 
-Tests all 13 event types, validation logic, serialization, and edge cases.
+Tests all event types, validation logic, serialization, and edge cases.
 Target: 100% test coverage on schemas module.
 
 Test Categories:
@@ -837,6 +837,32 @@ class TestHelperFunctions:
                         "summary_text": "Session started",
                     }
                 )
+            elif event_type == "approval.required":
+                data.update(
+                    {
+                        "approval_id": "appr_123",
+                        "tool": "write",
+                        "risk_score": 0.9,
+                        "reasons": ["delete_operation"],
+                        "action": "blocked",
+                    }
+                )
+            elif event_type == "approval.granted":
+                data.update(
+                    {
+                        "approval_id": "appr_123",
+                        "status": "granted",
+                        "actor": "user",
+                    }
+                )
+            elif event_type == "approval.denied":
+                data.update(
+                    {
+                        "approval_id": "appr_456",
+                        "status": "denied",
+                        "actor": "user",
+                    }
+                )
             elif event_type == "requirement_reference":
                 data.update(
                     {
@@ -937,6 +963,9 @@ class TestEdgeCases:
             "test.run_started",
             "test.run_completed",
             "session.summary",
+            "approval.required",
+            "approval.granted",
+            "approval.denied",
             "requirement_reference",
         }
         assert set(EVENT_TYPE_REGISTRY.keys()) == expected_types

@@ -150,6 +150,8 @@ class TestBackupManagerInit:
 
     def test_is_available_when_enabled(self, mock_config):
         """Test is_available returns True when properly configured."""
+        token_path = mock_config.credentials_dir / "google_drive_token.pickle"
+        token_path.write_bytes(b"token")
         with patch.object(backup_manager, "GOOGLE_DRIVE_AVAILABLE", True):
             manager = backup_manager.BackupManager()
             assert manager.is_available() is True
@@ -157,6 +159,8 @@ class TestBackupManagerInit:
     def test_is_available_when_disabled(self, mock_config):
         """Test is_available returns False when disabled."""
         mock_config.backup_enabled = False
+        token_path = mock_config.credentials_dir / "google_drive_token.pickle"
+        token_path.write_bytes(b"token")
 
         with patch.object(backup_manager, "GOOGLE_DRIVE_AVAILABLE", True):
             manager = backup_manager.BackupManager()
@@ -164,7 +168,15 @@ class TestBackupManagerInit:
 
     def test_is_available_when_api_not_installed(self, mock_config):
         """Test is_available returns False when Google Drive API not installed."""
+        token_path = mock_config.credentials_dir / "google_drive_token.pickle"
+        token_path.write_bytes(b"token")
         with patch.object(backup_manager, "GOOGLE_DRIVE_AVAILABLE", False):
+            manager = backup_manager.BackupManager()
+            assert manager.is_available() is False
+
+    def test_is_available_without_token(self, mock_config):
+        """Test is_available returns False when token is missing."""
+        with patch.object(backup_manager, "GOOGLE_DRIVE_AVAILABLE", True):
             manager = backup_manager.BackupManager()
             assert manager.is_available() is False
 
@@ -348,6 +360,8 @@ class TestBackupOperations:
         # Create credentials
         credentials_path = mock_config.credentials_dir / "google_drive_credentials.json"
         credentials_path.write_text('{"installed":{"client_id":"test"}}')
+        token_path = mock_config.credentials_dir / "google_drive_token.pickle"
+        token_path.write_bytes(b"token")
 
         with patch.object(backup_manager, "GOOGLE_DRIVE_AVAILABLE", True):
             with patch("src.core.backup_manager.build", return_value=mock_google_drive_service):
@@ -360,6 +374,8 @@ class TestBackupOperations:
                     result = manager.backup_session(session_id)
 
                     assert result["session_id"] == session_id
+                    assert result["success"] is True
+                    assert result["file_id"] is not None
                     assert result["size_bytes"] > 0
                     assert result["duration_ms"] >= 0
 

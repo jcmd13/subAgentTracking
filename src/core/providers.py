@@ -1,19 +1,17 @@
 """Provider interfaces and fallback manager for multi-model support.
 
-Phase 3 scaffold:
+Phase 3:
 - BaseProvider abstract class
-- Stub providers for Claude, Ollama, and Gemini
+- Live-capable providers for Claude, Ollama, and Gemini (stubbed when disabled)
 - FallbackManager to cycle providers on failure
 - Provider factory that loads ordering and models from YAML
-
-This is intentionally lightweight and offline-safe; real API calls should
-replace the stubbed `generate` implementations in a future phase.
 """
 
 from __future__ import annotations
 
 import abc
 import json
+import os
 from pathlib import Path
 from typing import List, Optional, Iterable, Dict, Any
 
@@ -37,29 +35,126 @@ class BaseProvider(abc.ABC):
         """Generate a response for the given prompt."""
 
 
+def _is_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _resolve_live_flag(providers_cfg: Optional[Dict[str, Any]] = None) -> bool:
+    if providers_cfg:
+        live_value = providers_cfg.get("live")
+        if live_value is not None:
+            if isinstance(live_value, bool):
+                return live_value
+            return _is_truthy(str(live_value))
+    return _is_truthy(os.getenv("SUBAGENT_PROVIDER_LIVE") or os.getenv("SUBAGENT_LIVE_PROVIDERS"))
+
+
 class ClaudeProvider(BaseProvider):
-    def __init__(self, model: str = "claude-sonnet-3.5"):
+    def __init__(
+        self,
+        model: str = "claude-sonnet-3.5",
+        api_key: Optional[str] = None,
+        allow_live: Optional[bool] = None,
+    ):
         super().__init__(name="claude", model=model)
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
+        self.allow_live = allow_live if allow_live is not None else _resolve_live_flag()
 
     def generate(self, prompt: str) -> str:
-        # Stubbed response for offline tests
-        return f"[claude:{self.model}] {prompt}"
+        if not self.allow_live:
+            return f"[claude:{self.model}] {prompt}"
+        if not self.api_key:
+            raise ProviderError("Anthropic API key missing (set ANTHROPIC_API_KEY).")
+        try:
+            import anthropic  # type: ignore
+        except Exception as e:
+            raise ProviderError("Anthropic SDK not installed.") from e
+
+        try:
+            client = anthropic.Anthropic(api_key=self.api_key)
+            response = client.messages.create(
+                model=self.model,
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = getattr(response, "content", None)
+            if isinstance(content, list) and content:
+                block = content[0]
+                text = getattr(block, "text", None)
+                if text:
+                    return text
+            return str(response)
+        except Exception as e:
+            raise ProviderError(f"Anthropic call failed: {e}") from e
 
 
 class OllamaProvider(BaseProvider):
-    def __init__(self, model: str = "llama3"):
+    def __init__(
+        self,
+        model: str = "llama3",
+        endpoint: Optional[str] = None,
+        allow_live: Optional[bool] = None,
+    ):
         super().__init__(name="ollama", model=model)
+        self.endpoint = endpoint or os.getenv("OLLAMA_HOST") or os.getenv("OLLAMA_BASE_URL")
+        self.allow_live = allow_live if allow_live is not None else _resolve_live_flag()
 
     def generate(self, prompt: str) -> str:
-        return f"[ollama:{self.model}] {prompt}"
+        if not self.allow_live:
+            return f"[ollama:{self.model}] {prompt}"
+        try:
+            import ollama  # type: ignore
+        except Exception as e:
+            raise ProviderError("Ollama SDK not installed.") from e
+
+        try:
+            if self.endpoint:
+                client = ollama.Client(host=self.endpoint)
+                data = client.generate(model=self.model, prompt=prompt)
+            else:
+                data = ollama.generate(model=self.model, prompt=prompt)
+            response = data.get("response")
+            if response:
+                return response
+            message = data.get("message", {})
+            if isinstance(message, dict) and message.get("content"):
+                return message["content"]
+            return json.dumps(data)
+        except Exception as e:
+            raise ProviderError(f"Ollama call failed: {e}") from e
 
 
 class GeminiProvider(BaseProvider):
-    def __init__(self, model: str = "gemini-2.0-pro"):
+    def __init__(
+        self,
+        model: str = "gemini-2.0-pro",
+        api_key: Optional[str] = None,
+        allow_live: Optional[bool] = None,
+    ):
         super().__init__(name="gemini", model=model)
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        self.allow_live = allow_live if allow_live is not None else _resolve_live_flag()
 
     def generate(self, prompt: str) -> str:
-        return f"[gemini:{self.model}] {prompt}"
+        if not self.allow_live:
+            return f"[gemini:{self.model}] {prompt}"
+        if not self.api_key:
+            raise ProviderError("Gemini API key missing (set GOOGLE_API_KEY).")
+        try:
+            import google.generativeai as genai  # type: ignore
+        except Exception as e:
+            raise ProviderError("Gemini SDK not installed.") from e
+
+        try:
+            genai.configure(api_key=self.api_key)
+            model = genai.GenerativeModel(self.model)
+            response = model.generate_content(prompt)
+            text = getattr(response, "text", None)
+            return text or str(response)
+        except Exception as e:
+            raise ProviderError(f"Gemini call failed: {e}") from e
 
 
 class FallbackManager:
@@ -104,6 +199,7 @@ def load_provider_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
 
     cfg = {
         "providers": {
+            "live": False,
             "order": DEFAULT_ORDER,
             "claude": {"model": "claude-sonnet-3.5"},
             "ollama": {"model": "llama3"},
@@ -111,7 +207,11 @@ def load_provider_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
         }
     }
 
-    path = config_path or Path(".subagent/config/providers.yaml")
+    if config_path:
+        path = config_path
+    else:
+        data_dir = os.getenv("SUBAGENT_DATA_DIR") or ".subagent"
+        path = Path(data_dir) / "config" / "providers.yaml"
     if path.exists():
         try:
             data = yaml.safe_load(path.read_text()) or {}
@@ -135,6 +235,9 @@ def build_providers(config: Optional[Dict[str, Any]] = None) -> List[BaseProvide
     else:
         cfg = load_provider_config()
     providers_cfg = cfg.get("providers", {})
+    if not isinstance(providers_cfg, dict):
+        providers_cfg = {}
+    live_calls = _resolve_live_flag(providers_cfg)
     order = providers_cfg.get("order") if config is not None else providers_cfg.get("order", DEFAULT_ORDER)
     if not isinstance(order, list):
         order = DEFAULT_ORDER
@@ -142,14 +245,20 @@ def build_providers(config: Optional[Dict[str, Any]] = None) -> List[BaseProvide
     instances: List[BaseProvider] = []
     for name in order:
         if name == "claude":
-            model = providers_cfg.get("claude", {}).get("model", "claude-sonnet-3.5")
-            instances.append(ClaudeProvider(model=model))
+            claude_cfg = providers_cfg.get("claude", {}) if isinstance(providers_cfg.get("claude"), dict) else {}
+            model = claude_cfg.get("model", "claude-sonnet-3.5")
+            api_key = claude_cfg.get("api_key")
+            instances.append(ClaudeProvider(model=model, api_key=api_key, allow_live=live_calls))
         elif name == "ollama":
-            model = providers_cfg.get("ollama", {}).get("model", "llama3")
-            instances.append(OllamaProvider(model=model))
+            ollama_cfg = providers_cfg.get("ollama", {}) if isinstance(providers_cfg.get("ollama"), dict) else {}
+            model = ollama_cfg.get("model", "llama3")
+            endpoint = ollama_cfg.get("endpoint")
+            instances.append(OllamaProvider(model=model, endpoint=endpoint, allow_live=live_calls))
         elif name == "gemini":
-            model = providers_cfg.get("gemini", {}).get("model", "gemini-2.0-pro")
-            instances.append(GeminiProvider(model=model))
+            gemini_cfg = providers_cfg.get("gemini", {}) if isinstance(providers_cfg.get("gemini"), dict) else {}
+            model = gemini_cfg.get("model", "gemini-2.0-pro")
+            api_key = gemini_cfg.get("api_key")
+            instances.append(GeminiProvider(model=model, api_key=api_key, allow_live=live_calls))
     return instances
 
 

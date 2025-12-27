@@ -13,15 +13,18 @@ Usage:
     >>> # Stop with: server.shutdown()
 """
 
-import os
+import json
 import logging
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from threading import Thread
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, parse_qs
+
+from src.core import activity_logger_compat as activity_logger
+from src.core.approval_store import get_approval, list_approvals, record_decision
 
 logger = logging.getLogger(__name__)
-
 
 # ============================================================================
 # Dashboard Request Handler
@@ -42,7 +45,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
         """Add CORS headers for development."""
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS, POST')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         super().end_headers()
 
@@ -50,6 +53,115 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
         """Handle OPTIONS request for CORS."""
         self.send_response(200)
         self.end_headers()
+
+    def _send_json(self, status_code: int, payload: dict) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_approvals_get(self, path: str, query: dict) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) == 2:
+            status = None
+            if "status" in query:
+                status = query["status"][0]
+            approvals = list_approvals(status=status)
+            self._send_json(200, {"approvals": approvals})
+            return
+        if len(parts) == 3:
+            approval_id = parts[2]
+            approval = get_approval(approval_id)
+            if not approval:
+                self._send_json(404, {"error": "approval_not_found"})
+                return
+            self._send_json(200, {"approval": approval})
+            return
+        self._send_json(404, {"error": "not_found"})
+
+    def _handle_approvals_post(self, path: str) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) != 4 or parts[3] != "decision":
+            self._send_json(404, {"error": "not_found"})
+            return
+
+        approval_id = parts[2]
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            content_length = 0
+
+        body = self.rfile.read(content_length) if content_length > 0 else b""
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+        except json.JSONDecodeError:
+            self._send_json(400, {"error": "invalid_json"})
+            return
+
+        status = payload.get("status")
+        actor = payload.get("actor")
+        reason = payload.get("reason")
+
+        try:
+            record = record_decision(approval_id, status, actor=actor, reason=reason)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
+
+        if not record:
+            self._send_json(404, {"error": "approval_not_found"})
+            return
+
+        decision = record.decision or {}
+        decided_at = decision.get("decided_at")
+        try:
+            if record.status == "granted":
+                activity_logger.log_approval_granted(
+                    approval_id=record.approval_id,
+                    actor=actor,
+                    reason=reason,
+                    tool=record.tool,
+                    operation=record.operation,
+                    file_path=record.file_path,
+                    risk_score=record.risk_score,
+                    reasons=record.reasons,
+                    summary=record.summary,
+                    decided_at=decided_at,
+                )
+            elif record.status == "denied":
+                activity_logger.log_approval_denied(
+                    approval_id=record.approval_id,
+                    actor=actor,
+                    reason=reason,
+                    tool=record.tool,
+                    operation=record.operation,
+                    file_path=record.file_path,
+                    risk_score=record.risk_score,
+                    reasons=record.reasons,
+                    summary=record.summary,
+                    decided_at=decided_at,
+                )
+        except Exception:
+            pass
+
+        self._send_json(200, {"approval": record.to_dict()})
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/approvals"):
+            query = parse_qs(parsed.query)
+            self._handle_approvals_get(parsed.path, query)
+            return
+        return super().do_GET()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/approvals"):
+            self._handle_approvals_post(parsed.path)
+            return
+        self._send_json(404, {"error": "not_found"})
 
 
 # ============================================================================

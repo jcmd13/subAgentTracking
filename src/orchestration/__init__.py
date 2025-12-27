@@ -53,6 +53,20 @@ from src.orchestration.model_router_subscriber import (
     get_model_router_subscriber,
     shutdown_model_router_subscriber
 )
+from src.orchestration.agent_spawner import AgentSpawner
+from src.orchestration.agent_monitor import AgentMonitor
+from src.orchestration.agent_lifecycle import AgentLifecycle
+from src.orchestration.agent_executor import AgentExecutor
+from src.orchestration.agent_runtime import AgentRuntimeManager, get_agent_runtime_manager
+from src.orchestration.permissions import PermissionManager, PermissionProfile, PermissionDecision
+from src.orchestration.tool_proxy import ToolProxy, ToolResult
+from src.orchestration.file_tools import FileToolProxy
+from src.orchestration.test_protection import (
+    is_test_path,
+    detect_test_modifications,
+    list_modified_paths,
+    assert_tests_unmodified,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +97,24 @@ __all__ = [
     'initialize_model_router_subscriber',
     'get_model_router_subscriber',
     'shutdown_model_router_subscriber',
+
+    # Agent lifecycle helpers
+    'AgentSpawner',
+    'AgentMonitor',
+    'AgentLifecycle',
+    'AgentExecutor',
+    'AgentRuntimeManager',
+    'get_agent_runtime_manager',
+    'PermissionManager',
+    'PermissionProfile',
+    'PermissionDecision',
+    'ToolProxy',
+    'ToolResult',
+    'FileToolProxy',
+    'is_test_path',
+    'detect_test_modifications',
+    'list_modified_paths',
+    'assert_tests_unmodified',
 
     # Unified initialization
     'initialize_orchestration',

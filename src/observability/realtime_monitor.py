@@ -246,7 +246,7 @@ class RealtimeMonitor(EventHandler):
         if self.auto_subscribe:
             event_bus = get_event_bus()
             for event_type in ALL_EVENT_TYPES:
-                event_bus.subscribe(event_type, self)
+                event_bus.subscribe(event_type, self.handle)
 
         # Start metrics loop
         if self.metrics_interval and self.metrics_interval > 0:
@@ -279,7 +279,7 @@ class RealtimeMonitor(EventHandler):
         if self.auto_subscribe:
             event_bus = get_event_bus()
             for event_type in ALL_EVENT_TYPES:
-                event_bus.unsubscribe(event_type, self)
+                event_bus.unsubscribe(event_type, self.handle)
 
         # Stop metrics loop
         if self._metrics_task:
@@ -685,3 +685,70 @@ def shutdown_realtime_monitor() -> None:
     """Shutdown global real-time monitor instance."""
     global _monitor_instance
     _monitor_instance = None
+
+
+# ============================================================================
+# CLI Entry Point
+# ============================================================================
+
+def main():
+    """CLI entry point for realtime monitor."""
+    import argparse
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    parser = argparse.ArgumentParser(
+        description="SubAgent Tracking Realtime Monitor"
+    )
+    parser.add_argument("--host", default="localhost", help="WebSocket host")
+    parser.add_argument("--port", type=int, default=8765, help="WebSocket port")
+    parser.add_argument("--max-connections", type=int, default=100, help="Max connections")
+    parser.add_argument("--buffer-size", type=int, default=100, help="Event buffer size")
+    parser.add_argument(
+        "--metrics-interval",
+        type=float,
+        default=1.0,
+        help="Metrics interval seconds",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=300,
+        help="Default metrics window size",
+    )
+    parser.add_argument(
+        "--no-auto-subscribe",
+        action="store_true",
+        help="Disable auto-subscribe to the event bus",
+    )
+    args = parser.parse_args()
+
+    monitor = RealtimeMonitor(
+        host=args.host,
+        port=args.port,
+        max_connections=args.max_connections,
+        buffer_size=args.buffer_size,
+        auto_subscribe=not args.no_auto_subscribe,
+        metrics_interval=args.metrics_interval,
+        default_window_size=args.window_size,
+    )
+
+    async def _serve() -> None:
+        await monitor.start()
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+        finally:
+            await monitor.stop()
+
+    try:
+        asyncio.run(_serve())
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

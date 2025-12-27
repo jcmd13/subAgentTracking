@@ -31,12 +31,28 @@
 # Analytics Database (backed up to Google Drive) - .subagent
 .subagent/analytics/*
 
+# Subagent config and runtime
+.subagent/.gitkeep
+.subagent/config.yaml
+.subagent/config/*
+.subagent/tasks/*
+.subagent/hooks/*
+.subagent/quality/*
+
+# Observability runtime data - .subagent
+.subagent/observability/*
+
+# Approval persistence - .subagent
+.subagent/approvals/*
+
 # Credentials and Tokens - .subagent
 .subagent/credentials/*
 
 # PRD requirements (allow PRD markdown)
 .subagent/requirements/*
-!.subagent/requirements/PRD*.md
+
+# Local analytics artifacts
+analytics/
 
 # Python
 __pycache__/

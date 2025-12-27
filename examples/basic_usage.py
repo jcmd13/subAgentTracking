@@ -37,7 +37,7 @@ def example_minimal_integration():
     print("✅ Agent invocation logged")
 
     # The system automatically creates:
-    # - Activity log entry in .claude/logs/session_current.jsonl
+    # - Activity log entry in .subagent/logs/session_current.jsonl
     # - Analytics database entry
     # - Metadata tracking
 
@@ -53,10 +53,10 @@ def example_minimal_integration():
     # Step 4: Query what was logged
     print("\n[4] Checking what was logged...")
     print(
-        f"   Activity logs: .claude/logs/session_current.jsonl (gzip compressed)"
+        f"   Activity logs: .subagent/logs/session_current.jsonl (gzip compressed)"
     )
-    print(f"   Snapshots: .claude/state/session_current_*.json")
-    print(f"   Analytics: .claude/analytics/tracking.db (SQLite)")
+    print(f"   Snapshots: .subagent/state/session_current_*.json")
+    print(f"   Analytics: .subagent/analytics/tracking.db (SQLite)")
 
     print("\n" + "=" * 60)
     print("✅ Basic integration complete!")
@@ -64,7 +64,7 @@ def example_minimal_integration():
     print("\nNext steps:")
     print("  1. See custom_events.py for logging different event types")
     print("  2. See analytics_queries.py for querying the data")
-    print("  3. See GETTING_STARTED.md for integration into your project")
+    print("  3. See README.md for integration into your project")
 
 
 def example_automatic_snapshots():
@@ -110,7 +110,7 @@ def example_file_structure():
 
     structure = """
     your_project/
-    ├── .claude/
+    ├── .subagent/
     │   ├── logs/
     │   │   └── session_current.jsonl.gz          # Activity log (auto-rotating)
     │   ├── state/

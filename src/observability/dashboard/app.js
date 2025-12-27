@@ -32,12 +32,20 @@ let metricsHistory = {
     maxPoints: 60  // Last 60 seconds
 };
 
+let approvalsState = {
+    approvals: [],
+    lastUpdated: null
+};
+
+let approvalsTimer = null;
+
 let taskState = {
     taskId: null,
     taskName: 'No active task',
     stage: '--',
     status: 'Idle',
-    updatedAt: null
+    updatedAt: null,
+    progressPct: null
 };
 
 let lastTest = {
@@ -116,6 +124,11 @@ function handleOpen(event) {
         filters: []
     };
     ws.send(JSON.stringify(subscribeMsg));
+
+    fetchApprovals();
+    if (!approvalsTimer) {
+        approvalsTimer = setInterval(fetchApprovals, 5000);
+    }
 }
 
 function handleMessage(event) {
@@ -152,6 +165,11 @@ function handleClose(event) {
     console.log('WebSocket closed:', event.code, event.reason);
     updateConnectionStatus('disconnected', 'Disconnected');
 
+    if (approvalsTimer) {
+        clearInterval(approvalsTimer);
+        approvalsTimer = null;
+    }
+
     if (event.code !== 1000) {  // Not a normal closure
         showToast('Connection lost. Reconnecting...', 'warning');
         scheduleReconnect();
@@ -168,6 +186,9 @@ function handleEventMessage(event) {
     updateTaskFromEvent(normalized);
     updateTestFromEvent(normalized);
     updateSessionSummaryFromEvent(normalized);
+    if (normalized.event_type && normalized.event_type.startsWith('approval.')) {
+        fetchApprovals();
+    }
 
     // Add to event buffer
     eventBuffer.unshift(normalized);
@@ -221,6 +242,9 @@ function updateMetricsDisplay(metrics) {
         metrics.workflows_active || 0;
     document.getElementById('activeTasks').textContent =
         metrics.tasks_active || 0;
+    const progressAvg = metrics.task_progress_avg;
+    document.getElementById('taskProgressAvg').textContent =
+        progressAvg != null ? `${progressAvg.toFixed(1)}%` : '0%';
     document.getElementById('testsPassFail').textContent =
         `${metrics.tests_passed || 0} / ${metrics.tests_failed || 0}`;
     document.getElementById('totalTokens').textContent =
@@ -250,24 +274,28 @@ function updateTaskFromEvent(event) {
     const payload = event.payload || {};
 
     if (event.event_type === 'task.started') {
+        const progress = payload.progress_pct != null ? payload.progress_pct : 0;
         taskState = {
             taskId: payload.task_id || null,
             taskName: payload.task_name || 'Unnamed task',
             stage: payload.stage || '--',
             status: 'In Progress',
-            updatedAt: event.timestamp
+            updatedAt: event.timestamp,
+            progressPct: progress
         };
         renderTaskStrip();
         return;
     }
 
     if (event.event_type === 'task.stage_changed') {
+        const progress = payload.progress_pct != null ? payload.progress_pct : taskState.progressPct;
         taskState = {
             taskId: payload.task_id || taskState.taskId,
             taskName: payload.task_name || taskState.taskName,
             stage: payload.stage || taskState.stage,
             status: 'In Progress',
-            updatedAt: event.timestamp
+            updatedAt: event.timestamp,
+            progressPct: progress
         };
         renderTaskStrip();
         return;
@@ -275,12 +303,18 @@ function updateTaskFromEvent(event) {
 
     if (event.event_type === 'task.completed') {
         const status = payload.status === 'failed' ? 'Failed' : 'Completed';
+        const progress = payload.progress_pct != null
+            ? payload.progress_pct
+            : payload.status === 'success'
+                ? 100
+                : taskState.progressPct;
         taskState = {
             taskId: payload.task_id || taskState.taskId,
             taskName: payload.task_name || taskState.taskName,
             stage: payload.stage || 'Done',
             status,
-            updatedAt: event.timestamp
+            updatedAt: event.timestamp,
+            progressPct: progress
         };
         renderTaskStrip();
     }
@@ -328,6 +362,18 @@ function renderTaskStrip() {
     document.getElementById('taskStage').textContent = `Stage: ${taskState.stage || '--'}`;
     document.getElementById('taskStatus').textContent = taskState.status || 'Idle';
     document.getElementById('taskUpdated').textContent = `Updated: ${formatTimestamp(taskState.updatedAt)}`;
+    const progressEl = document.getElementById('taskProgress');
+    const progressFill = document.getElementById('taskProgressFill');
+    const progressValue = typeof taskState.progressPct === 'number' ? taskState.progressPct : null;
+    if (progressEl) {
+        progressEl.textContent = progressValue != null
+            ? `Progress: ${Math.round(progressValue)}%`
+            : 'Progress: --';
+    }
+    if (progressFill) {
+        const clamped = progressValue != null ? Math.min(Math.max(progressValue, 0), 100) : 0;
+        progressFill.style.width = `${clamped}%`;
+    }
 }
 
 function renderTestStatus() {
@@ -370,6 +416,133 @@ function toggleSessionSummary(forceShow) {
     }
 }
 
+async function fetchApprovals() {
+    const listEl = document.getElementById('approvalsList');
+    if (!listEl) return;
+
+    try {
+        const response = await fetch('/api/approvals?status=required');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        approvalsState.approvals = data.approvals || [];
+        approvalsState.lastUpdated = new Date().toISOString();
+        renderApprovals();
+    } catch (error) {
+        console.error('Failed to fetch approvals:', error);
+    }
+}
+
+function renderApprovals() {
+    const listEl = document.getElementById('approvalsList');
+    const countEl = document.getElementById('approvalsCount');
+    if (!listEl || !countEl) return;
+
+    const approvals = approvalsState.approvals || [];
+    countEl.textContent = approvals.length;
+    listEl.innerHTML = '';
+
+    if (approvals.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'approvals-empty';
+        empty.textContent = 'No pending approvals';
+        listEl.appendChild(empty);
+        return;
+    }
+
+    approvals.forEach((approval) => {
+        listEl.appendChild(buildApprovalItem(approval));
+    });
+}
+
+function buildApprovalItem(approval) {
+    const item = document.createElement('div');
+    item.className = 'approval-item';
+
+    const header = document.createElement('div');
+    header.className = 'approval-item-header';
+
+    const title = document.createElement('div');
+    title.className = 'approval-title';
+    const fallbackTitle = approval.tool ? `Tool: ${approval.tool}` : 'Approval request';
+    title.textContent = approval.summary || fallbackTitle;
+
+    const risk = document.createElement('div');
+    risk.className = 'approval-risk';
+    if (approval.risk_score !== undefined && approval.risk_score !== null) {
+        risk.textContent = `Risk ${approval.risk_score.toFixed(2)}`;
+    } else {
+        risk.textContent = 'Risk --';
+    }
+
+    header.appendChild(title);
+    header.appendChild(risk);
+
+    const meta = document.createElement('div');
+    meta.className = 'approval-meta';
+    const metaParts = [];
+    if (approval.operation) metaParts.push(`op: ${approval.operation}`);
+    if (approval.file_path) metaParts.push(approval.file_path);
+    if (Array.isArray(approval.reasons) && approval.reasons.length > 0) {
+        metaParts.push(approval.reasons.join(', '));
+    }
+    meta.textContent = metaParts.length > 0 ? metaParts.join(' • ') : 'No details provided';
+
+    const idLine = document.createElement('div');
+    idLine.className = 'approval-id';
+    idLine.textContent = approval.approval_id ? `ID: ${approval.approval_id}` : 'ID: --';
+
+    const actions = document.createElement('div');
+    actions.className = 'approval-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'btn btn-primary btn-small';
+    approveBtn.textContent = 'Approve';
+    approveBtn.disabled = !approval.approval_id;
+    approveBtn.addEventListener('click', () => {
+        submitApprovalDecision(approval.approval_id, 'granted');
+    });
+
+    const denyBtn = document.createElement('button');
+    denyBtn.className = 'btn btn-danger btn-small';
+    denyBtn.textContent = 'Deny';
+    denyBtn.disabled = !approval.approval_id;
+    denyBtn.addEventListener('click', () => {
+        submitApprovalDecision(approval.approval_id, 'denied');
+    });
+
+    actions.appendChild(approveBtn);
+    actions.appendChild(denyBtn);
+
+    item.appendChild(header);
+    item.appendChild(meta);
+    item.appendChild(idLine);
+    item.appendChild(actions);
+
+    return item;
+}
+
+async function submitApprovalDecision(approvalId, status) {
+    if (!approvalId) return;
+    try {
+        const response = await fetch(`/api/approvals/${approvalId}/decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status, actor: 'dashboard' })
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const label = status === 'granted' ? 'approved' : 'denied';
+        showToast(`Approval ${label}`, status === 'granted' ? 'success' : 'warning');
+        fetchApprovals();
+    } catch (error) {
+        console.error('Failed to submit approval decision:', error);
+        showToast('Failed to update approval', 'error');
+    }
+}
+
 function addEventToStream(event) {
     const stream = document.getElementById('eventStream');
 
@@ -404,6 +577,9 @@ function getEventCategory(event) {
     const eventType = event.event_type || '';
     const payload = event.payload || {};
 
+    if (eventType === 'approval.required') return 'warning';
+    if (eventType === 'approval.granted') return 'success';
+    if (eventType === 'approval.denied') return 'error';
     if (eventType === 'test.run_completed' && payload.status === 'failed') return 'error';
     if (eventType === 'task.completed' && payload.status === 'failed') return 'error';
 
@@ -444,6 +620,22 @@ function formatEventDetails(event) {
     // Extract session summary info
     if (event.event_type === 'session.summary') {
         return `Summary: ${payload.summary_type || 'start'}`;
+    }
+
+    if (event.event_type === 'approval.required') {
+        const score = payload.risk_score != null ? ` (${payload.risk_score})` : '';
+        const target = payload.file_path ? ` ${payload.file_path}` : '';
+        return `Approval required${score}${target}`;
+    }
+
+    if (event.event_type === 'approval.granted') {
+        const target = payload.file_path ? ` ${payload.file_path}` : '';
+        return `Approval granted${target}`;
+    }
+
+    if (event.event_type === 'approval.denied') {
+        const target = payload.file_path ? ` ${payload.file_path}` : '';
+        return `Approval denied${target}`;
     }
 
     // Extract workflow ID
@@ -705,6 +897,13 @@ function setupEventHandlers() {
         toggleSessionSummary(false);
     });
 
+    const refreshApprovals = document.getElementById('refreshApprovals');
+    if (refreshApprovals) {
+        refreshApprovals.addEventListener('click', () => {
+            fetchApprovals();
+        });
+    }
+
     // Click outside modal to close
     window.addEventListener('click', (e) => {
         const modal = document.getElementById('settingsModal');
@@ -778,6 +977,7 @@ function init() {
     setupEventHandlers();
     initCharts();
     connect();
+    fetchApprovals();
 
     console.log('Dashboard initialized');
 }

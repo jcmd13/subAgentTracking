@@ -85,6 +85,7 @@ class TestDatabaseInitialization:
             "file_operations",
             "decisions",
             "validations",
+            "tasks",
         ]
 
         with db.get_connection() as conn:
@@ -200,6 +201,121 @@ class TestInsertFunctions:
             assert row is not None
             assert row["tool_name"] == "Write"
             assert row["success"] == 1  # SQLite stores boolean as int
+
+    def test_upsert_task_state(self, mock_config):
+        """Test upserting task state."""
+        db = analytics_db.AnalyticsDB()
+        db.initialize()
+
+        result = db.upsert_task_state(
+            task_id="task_20251220_001",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:00:00Z",
+            task_name="Add risk scoring",
+            stage="plan",
+            status="started",
+            summary="Initial planning",
+            eta_minutes=30,
+            owner="orchestrator",
+            progress_pct=10.0,
+            started_at="2025-12-20T12:00:00Z",
+        )
+        assert result is True
+
+        # Update stage
+        result = db.upsert_task_state(
+            task_id="task_20251220_001",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:10:00Z",
+            stage="implement",
+            status="in_progress",
+            progress_pct=55.0,
+        )
+        assert result is True
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM tasks WHERE task_id = ?", ("task_20251220_001",))
+            row = cursor.fetchone()
+
+            assert row is not None
+            assert row["stage"] == "implement"
+            assert row["status"] == "in_progress"
+            assert row["progress_pct"] == 55.0
+
+    def test_task_query_helpers(self, mock_config):
+        """Test task query helpers."""
+        db = analytics_db.AnalyticsDB()
+        db.initialize()
+
+        db.upsert_task_state(
+            task_id="task_alpha",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:00:00Z",
+            task_name="Alpha task",
+            stage="plan",
+            status="in_progress",
+            progress_pct=30.0,
+        )
+        db.upsert_task_state(
+            task_id="task_beta",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:05:00Z",
+            task_name="Beta task",
+            stage="done",
+            status="success",
+            progress_pct=100.0,
+            completed_at="2025-12-20T12:05:00Z",
+        )
+
+        task = db.get_task_state("task_alpha")
+        assert task is not None
+        assert task["task_name"] == "Alpha task"
+        assert task["progress_pct"] == 30.0
+
+        tasks = db.list_tasks(status="in_progress")
+        assert len(tasks) == 1
+        assert tasks[0]["task_id"] == "task_alpha"
+
+    def test_task_progress_summary(self, mock_config):
+        """Test task progress summary aggregation."""
+        db = analytics_db.AnalyticsDB()
+        db.initialize()
+
+        db.upsert_task_state(
+            task_id="task_one",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:00:00Z",
+            task_name="Task One",
+            stage="plan",
+            status="in_progress",
+            progress_pct=20.0,
+        )
+        db.upsert_task_state(
+            task_id="task_two",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:10:00Z",
+            task_name="Task Two",
+            stage="build",
+            status="in_progress",
+            progress_pct=60.0,
+        )
+        db.upsert_task_state(
+            task_id="task_done",
+            session_id="session_20251220_120000",
+            timestamp="2025-12-20T12:20:00Z",
+            task_name="Task Done",
+            stage="done",
+            status="success",
+            progress_pct=100.0,
+            completed_at="2025-12-20T12:20:00Z",
+        )
+
+        summary = db.get_task_progress_summary()
+        assert summary["total_tasks"] == 3
+        assert summary["active_tasks"] == 2
+        assert summary["completed_tasks"] == 1
+        assert summary["avg_progress_active"] == pytest.approx(40.0)
 
     def test_insert_error_pattern(self, mock_config):
         """Test inserting error pattern record."""

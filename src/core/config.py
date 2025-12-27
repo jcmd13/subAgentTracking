@@ -59,6 +59,8 @@ class Config:
     credentials_dir: Path = field(default_factory=lambda: _default_data_dir() / "credentials")
     handoffs_dir: Path = field(default_factory=lambda: _default_data_dir() / "handoffs")
     requirements_dir: Path = field(default_factory=lambda: _default_data_dir() / "requirements")
+    approvals_dir: Path = field(default_factory=lambda: _default_data_dir() / "approvals")
+    observability_dir: Path = field(default_factory=lambda: _default_data_dir() / "observability")
 
     # Activity log settings
     activity_log_enabled: bool = True
@@ -200,6 +202,8 @@ class Config:
         self.credentials_dir = self.claude_dir / "credentials"
         self.handoffs_dir = self.claude_dir / "handoffs"
         self.requirements_dir = self.claude_dir / "requirements"
+        self.approvals_dir = self.claude_dir / "approvals"
+        self.observability_dir = self.claude_dir / "observability"
 
     def _ensure_directories(self):
         """Create tracking directories if they don't exist."""
@@ -210,6 +214,8 @@ class Config:
             self.credentials_dir,
             self.handoffs_dir,
             self.requirements_dir,
+            self.approvals_dir,
+            self.observability_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
@@ -331,6 +337,8 @@ class Config:
             ("analytics_dir", self.analytics_dir),
             ("credentials_dir", self.credentials_dir),
             ("handoffs_dir", self.handoffs_dir),
+            ("approvals_dir", self.approvals_dir),
+            ("observability_dir", self.observability_dir),
         ]:
             if not directory.exists():
                 errors.append(f"{dir_name} does not exist: {directory}")
@@ -353,6 +361,8 @@ class Config:
             "analytics_dir": str(self.analytics_dir),
             "credentials_dir": str(self.credentials_dir),
             "handoffs_dir": str(self.handoffs_dir),
+            "approvals_dir": str(self.approvals_dir),
+            "observability_dir": str(self.observability_dir),
             # Settings
             "activity_log_enabled": self.activity_log_enabled,
             "activity_log_compression": self.activity_log_compression,

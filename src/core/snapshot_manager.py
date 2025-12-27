@@ -35,9 +35,41 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 import subprocess
 
-from src.core import config, activity_logger
+from src.core import config
+from src.core.interfaces import ActivityLogger, BackupIntegration
 
 logger = logging.getLogger(__name__)
+
+_activity_logger: Optional[ActivityLogger] = None
+_backup_integration: Optional[BackupIntegration] = None
+
+
+def set_activity_logger(logger_instance: Optional[ActivityLogger]) -> None:
+    """Inject an activity logger implementation (used to break import cycles)."""
+    global _activity_logger
+    _activity_logger = logger_instance
+
+
+def set_backup_integration(backup_integration: Optional[BackupIntegration]) -> None:
+    """Inject a backup integration implementation (used to break import cycles)."""
+    global _backup_integration
+    _backup_integration = backup_integration
+
+
+def _get_activity_logger() -> ActivityLogger:
+    if _activity_logger is None:
+        from src.core import activity_logger as default_logger
+
+        return default_logger
+    return _activity_logger
+
+
+def _get_backup_integration() -> BackupIntegration:
+    if _backup_integration is None:
+        from src.core import backup_integration as default_backup
+
+        return default_backup
+    return _backup_integration
 
 
 # ============================================================================
@@ -218,7 +250,7 @@ def take_snapshot(
     start_time = time.time()
 
     cfg = config.get_config()
-    session_id = activity_logger.get_current_session_id()
+    session_id = _get_activity_logger().get_current_session_id()
 
     # If session_id is None, use a default
     if session_id is None:
@@ -244,7 +276,7 @@ def take_snapshot(
     timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     # Get total event count
-    total_events = activity_logger.get_event_count()
+    total_events = _get_activity_logger().get_event_count()
 
     # Calculate session duration (estimate based on session_id if available)
     elapsed_time_seconds = 0
@@ -330,7 +362,7 @@ def take_snapshot(
 
     # Log context snapshot event to activity log
     if token_count is not None and tokens_remaining is not None:
-        activity_logger.log_context_snapshot(
+        _get_activity_logger().log_context_snapshot(
             tokens_before=tokens_remaining + (token_count or 0),
             tokens_after=(tokens_remaining or 0),
             tokens_consumed=token_count or 0,
@@ -379,7 +411,7 @@ def restore_snapshot(snapshot_id: str) -> Dict[str, Any]:
     start_time = time.time()
 
     cfg = config.get_config()
-    session_id = activity_logger.get_current_session_id()
+    session_id = _get_activity_logger().get_current_session_id()
 
     # Parse snapshot number from ID
     try:
@@ -433,7 +465,7 @@ def list_snapshots(session_id: Optional[str] = None) -> List[Dict[str, Any]]:
     cfg = config.get_config()
 
     if session_id is None:
-        session_id = activity_logger.get_current_session_id()
+        session_id = _get_activity_logger().get_current_session_id()
 
     # Find all snapshot files for this session
     state_dir = cfg.state_dir
@@ -542,7 +574,7 @@ def create_handoff_summary(
     cfg = config.get_config()
 
     if session_id is None:
-        session_id = activity_logger.get_current_session_id()
+        session_id = _get_activity_logger().get_current_session_id()
 
     timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
@@ -682,9 +714,8 @@ def create_handoff_summary(
 
     # Trigger automatic backup on handoff (if enabled)
     try:
-        from src.core.backup_integration import backup_on_handoff
-
-        backup_result = backup_on_handoff(session_id=session_id, reason=reason)
+        backup_handler = _get_backup_integration()
+        backup_result = backup_handler.backup_on_handoff(session_id=session_id, reason=reason)
 
         # Add backup status to handoff summary if attempted
         if backup_result.get("attempted"):
@@ -804,4 +835,6 @@ __all__ = [
     "should_take_snapshot",
     "get_git_state",
     "reset_snapshot_counter",
+    "set_activity_logger",
+    "set_backup_integration",
 ]

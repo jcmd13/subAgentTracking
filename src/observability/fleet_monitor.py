@@ -169,7 +169,7 @@ class FleetMonitor(EventHandler):
             event_bus = get_event_bus()
             for event_type in [AGENT_INVOKED, AGENT_COMPLETED, AGENT_FAILED,
                               WORKFLOW_STARTED, WORKFLOW_COMPLETED]:
-                event_bus.subscribe(event_type, self)
+                event_bus.subscribe(event_type, self.handle)
 
         logger.info(f"FleetMonitor initialized: max_workflows={max_workflows}")
 

@@ -57,10 +57,15 @@ class SnapshotManagerSubscriber(EventHandler):
         self._tokens_remaining = 0
         self._last_snapshot_agent_count = 0
         self._snapshot_count = 0
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
 
         # Track files in context (approximate)
         self._files_in_context = set()
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def handle(self, event: Event) -> None:
         """
@@ -90,7 +95,7 @@ class SnapshotManagerSubscriber(EventHandler):
         Args:
             event: AGENT_INVOKED event
         """
-        async with self._lock:
+        async with self._get_lock():
             self._agent_count += 1
 
             # Check if we should create snapshot
@@ -124,7 +129,7 @@ class SnapshotManagerSubscriber(EventHandler):
             )
 
             # Update token tracking
-            async with self._lock:
+            async with self._get_lock():
                 self._tokens_remaining = payload.get("tokens_limit", 200000) - payload.get("tokens_used", 0)
                 self._token_count = payload.get("tokens_used", 0)
 
@@ -138,7 +143,7 @@ class SnapshotManagerSubscriber(EventHandler):
         """
         try:
             # Run snapshot creation in executor (I/O bound)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             snapshot_id = await loop.run_in_executor(
                 None,

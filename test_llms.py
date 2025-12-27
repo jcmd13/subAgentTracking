@@ -132,7 +132,7 @@ def main():
     if working == total:
         print("\n🎉 All LLMs configured successfully!")
         print("\n💡 Next Steps:")
-        print("   1. Read MULTI_LLM_ARCHITECTURE.md for optimal usage")
+        print("   1. Read README.md for provider setup and routing guidance")
         print("   2. Use MiniMax M2 for web research (2.2x faster!)")
         print("   3. Save Claude messages for complex tasks only")
         print("   4. Stay under $5 Perplexity credit limit with free LLMs")
@@ -147,7 +147,7 @@ def main():
         print("\n💡 Troubleshooting:")
         print("   - Verify .env file has correct API keys")
         print("   - Check Ollama is running: ollama list")
-        print("   - See LLM_SETUP_GUIDE.md for detailed setup")
+        print("   - See README.md for detailed setup")
 
     print("\n" + "="*60)
     print("💰 Cost Summary")

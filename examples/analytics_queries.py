@@ -348,6 +348,6 @@ if __name__ == "__main__":
     print("✅ All query examples completed!")
     print("=" * 60)
     print("\nFor more details:")
-    print("  • See AGENT_TRACKING_SYSTEM.md for complete API docs")
+    print("  • See README.md for complete API docs")
     print("  • Check src/core/analytics_db.py for all available methods")
     print("  • Run custom_events.py to generate sample data to query")

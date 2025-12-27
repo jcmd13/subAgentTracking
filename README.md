@@ -1,461 +1,364 @@
 # SubAgent Tracking System
 
-**Universal tracking, observability, and recovery system for Claude Code agentic workflows**
+Single source of truth for requirements and project tracking.
+Last updated: 2025-12-20
 
----
+## What this is
+A neutral observability and governance layer for AI coding workflows. It tracks
+agent activity, task lifecycle, approvals, tests, and recovery checkpoints with
+minimal disruption to developer flow. Think of it as "git for AI agents" plus
+governance signals.
 
-## 🎯 What Is This?
+## Quick summary
+- Core tracking, snapshots, analytics, and session handoffs are implemented.
+- CLI, dashboard server, and WebSocket monitor are implemented.
+- Adapter SDK, providers, and MCP server exist; E2E validation is pending.
+- Approvals and risk scoring exist; alert UX and blocking hooks are pending.
+- Requirements and roadmap live in this document only.
 
-A comprehensive tracking and observability system designed for **any Claude Code project** that uses subagent workflows. Think of it as "git for AI agents" - complete history, perfect recovery, and data-driven optimization.
-
----
-
-## 🚀 Core Features
-
-### 1. Complete Activity Logging
-- ✅ Every agent invocation (which, why, by whom)
-- ✅ Every tool usage (duration, success, errors)
-- ✅ Every file operation (with diffs)
-- ✅ Every decision (rationale, alternatives)
-- ✅ Every error (context, fixes attempted)
-
-### 2. Session State Snapshots
-- ✅ Periodic checkpoints of project state
-- ✅ Token usage tracking
-- ✅ Modified files with git hashes
-- ✅ Agent context summaries
-- ✅ 90% faster recovery (5k vs 50k tokens)
-
-### 3. Historical Analytics
-- ✅ Agent performance metrics
-- ✅ Tool effectiveness tracking
-- ✅ Error pattern analysis
-- ✅ Cost optimization insights
-- ✅ Data-driven agent improvements
-
-### 4. Intelligent Recovery
-- ✅ Recover from crashes instantly
-- ✅ Resume after token limits
-- ✅ Branch in time (try different approaches)
-- ✅ Session handoff summaries
-
-### 5. Cloud Backup & Archive
-- ✅ Automatic Google Drive backup
-- ✅ End-of-phase insights generation
-- ✅ Long-term AWS S3 archival
-- ✅ Zero data loss
-
----
-
-## 🧭 CLI (Phase 1 Skeleton)
-
-Install in editable mode to get the `subagent` command:
+## Quick start
+1) Create a virtual environment and install dependencies:
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+2) Install in editable mode to use the CLI:
 ```bash
 pip install -e .
 ```
-
-Usage:
-- `subagent init` — create `.subagent/` structure (logs/state/tasks/etc).
-- `subagent status [--json] [--watch]` — view current configuration; watch mode refreshes every 2s by default.
-- `subagent task-add "description" [-p PRIORITY]` — add a task (stored in `.subagent/tasks/tasks.json`).
-- `subagent task-list [--json]` — list tasks; `task-show <id>` for details.
-- `subagent logs [--follow] [--count N] [--task-id ID]` — read or tail the latest activity log with optional task filtering.
-
-The CLI sets `SUBAGENT_DATA_DIR=.subagent` so core modules write/read from the same location.
-
-Config file:
-- `.subagent/config.yaml` (auto-created on `init`) currently includes task defaults (priority) and status watch interval.
-  - Tasks are stored in `.subagent/tasks/tasks.json` with optional type, deadline, and acceptance criteria (repeat `--acceptance`).
-
----
-
-## 💡 Why Use This?
-
-### Problem: Loss of Context & Work
-
-**Without tracking**:
-- ❌ Session crashes → lose all context
-- ❌ Hit token limit → rebuild everything (150k tokens)
-- ❌ Can't debug "why did it do that?"
-- ❌ No learning from past sessions
-- ❌ Repeat same mistakes
-- ❌ No visibility into agent performance
-
-**With tracking**:
-- ✅ Instant recovery from any snapshot (5k tokens)
-- ✅ Complete audit trail for debugging
-- ✅ Learn from errors automatically
-- ✅ Optimize agents with real data
-- ✅ Never lose work
-- ✅ 85-90% token savings on recovery
-
----
-
-## 🏗️ Architecture
-
-### Three-Tier Storage System
-
-```
-┌─────────────────────────────────────────┐
-│   Tier 1: Local Storage (Fast)         │
-│   • Activity logs (JSONL)               │
-│   • Snapshots (JSON)                    │
-│   • Analytics (SQLite)                  │
-│   • Retention: Current + previous       │
-│   • Size: ~20 MB                        │
-└─────────────────────────────────────────┘
-              ↓ (Automatic backup)
-┌─────────────────────────────────────────┐
-│   Tier 2: Google Drive (Sync)          │
-│   • All sessions for current phase      │
-│   • Phase insights & analytics          │
-│   • Retention: 2 phases                 │
-│   • Size: ~500 MB per phase             │
-└─────────────────────────────────────────┘
-              ↓ (Archive after review)
-┌─────────────────────────────────────────┐
-│   Tier 3: AWS S3 (Archive)              │
-│   • Completed phases (>2 phases old)    │
-│   • Glacier Deep Archive                │
-│   • Retention: Forever                  │
-│   • Cost: $0.001/GB/month               │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 📊 Token Savings
-
-| Operation | Traditional | With Tracking | Savings |
-|-----------|-------------|---------------|---------|
-| Status check | 50k tokens | 5k tokens | **90%** |
-| Error recovery | 100k tokens | 10k tokens | **90%** |
-| Session resume | 150k tokens | 8k tokens | **95%** |
-| Debug "why?" | Impossible | Instant | **∞** |
-
-**Average savings**: 85-90% for recovery/status operations
-
----
-
-## 🎯 Who Is This For?
-
-### Perfect For:
-- ✅ **Complex Claude Code projects** with multi-agent workflows
-- ✅ **Long-running development** spanning multiple sessions
-- ✅ **Team collaboration** needing shared context
-- ✅ **Cost-sensitive projects** optimizing token usage
-- ✅ **Production systems** requiring audit trails
-- ✅ **Research projects** analyzing agent behavior
-
-### Use Cases:
-1. **Software Development** - Track all code changes, decisions, errors
-2. **Content Creation** - Never lose drafts, track iterations
-3. **Data Analysis** - Record transformations, visualizations
-4. **Research** - Complete experiment logs, reproducibility
-5. **Business Automation** - Audit trails for compliance
-6. **Learning Projects** - Review progress, identify improvements
-
----
-
-## 🚦 Quick Start
-
-### Installation (5 Minutes)
-
+3) Initialize the data directory:
 ```bash
-# 1. Clone this repository
-git clone https://github.com/jcmd13/subAgentTracking.git
-cd subAgentTracking
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Set up Google Drive API (one-time, 10 min)
-python setup_google_drive.py
-
-# 4. Copy to your project (default data dir is .subagent/)
-cp -r .subagent /path/to/your/project/  # legacy installs may still have .claude/
-cp src/core/* /path/to/your/project/src/core/
-
-# Tip: migrating a legacy .claude/ without copying? Set SUBAGENT_MIGRATE_LEGACY=1
-# and the tooling will create a .subagent symlink pointing to your existing .claude/ data.
-
-# 5. Done! Tracking starts automatically
-```
-
-### Usage
-
-**Automatic** (zero configuration):
-- Logs every agent action automatically
-- Snapshots every 10 agents or 20k tokens
-- Backs up to Google Drive at session end
-
-**Manual commands**:
-```bash
-# Resume from last session
-"Resume from last session"
-
-# Checkpoint progress
-"Checkpoint progress"
-
-# View session history
-"Show session history"
-
-# End-of-phase review
-"End Phase 1"
-
-# CLI (Phase 1)
 subagent init
-subagent status --json
-subagent task-add "Investigate backup failure" --priority 2
-subagent task-list --open
-subagent task-show task_20250101_120000_001
-subagent logs --follow
-subagent session-start --note "morning shift"
-subagent session-list --json
-subagent session-end --status completed
-
-# Provider config (Phase 3 stubs)
-# Edit .subagent/config/providers.yaml to set order/models:
-# providers:
-#   order: [ollama, claude, gemini]
-#   ollama: {model: llama3}
-#   claude: {model: claude-sonnet-3.5}
-#   gemini: {model: gemini-2.0-pro}
-# Model router can build a fallback mux from this config.
 ```
 
----
-
-## 📚 Learning & Training
-
-**New to the SubAgent Tracking System?** Check out our comprehensive training program:
-
-👉 **[SubAgent Training Repository](https://github.com/jcmd13/subAgentTracking-training)**
-
-The training repo includes:
-- 7 tutorial modules (beginner-friendly)
-- 6 interactive exercises
-- Hands-on refactoring project
-- Complete support materials
-
-**This repository** contains the production implementation. The training repository teaches you how to use it.
-
----
-
-## 📂 Project Structure
-
-```
-subAgentTracking/
-├── .subagent/                        # Tracking system config (default; .claude/ still supported for legacy)
-│   ├── AGENT_TRACKING_SYSTEM.md      # Complete documentation
-│   ├── STORAGE_ARCHITECTURE.md       # Storage strategy
-│   ├── TRACKING_QUICK_REFERENCE.md   # Quick lookup guide
-│   ├── logs/                         # Activity logs (local)
-│   ├── state/                        # Snapshots (local)
-│   ├── analytics/                    # SQLite DB (local)
-│   └── credentials/                  # Google Drive OAuth (git-ignored)
-│
-├── src/
-│   └── core/
-│       ├── activity_logger.py        # Event logging
-│       ├── snapshot_manager.py       # State snapshots
-│       ├── backup_manager.py         # Google Drive backup
-│       ├── analytics_db.py           # SQLite analytics
-│       └── phase_review.py           # End-of-phase analysis
-│
-├── docs/
-│   ├── SETUP_GUIDE.md               # Detailed setup instructions
-│   ├── INTEGRATION_GUIDE.md         # How to integrate with your project
-│   ├── API_REFERENCE.md             # Python API docs
-│   └── BEST_PRACTICES.md            # Tips and patterns
-│
-├── examples/
-│   ├── basic_usage.py               # Simple tracking example
-│   ├── custom_events.py             # Adding custom event types
-│   └── analytics_queries.py         # Example analytics queries
-│
-├── tests/
-│   ├── test_activity_logger.py
-│   ├── test_snapshot_manager.py
-│   └── test_backup_manager.py
-│
-├── requirements.txt                  # Python dependencies
-├── setup_google_drive.py            # One-time OAuth setup
-├── .gitignore                       # Ignore credentials, local logs
-└── README.md                        # This file
+Optional Google Drive backup setup:
+```bash
+python setup_google_drive.py
 ```
 
----
+Minimal integration example:
+```python
+from src.core.activity_logger import log_agent_invocation
 
-## 📚 Documentation
+log_agent_invocation(agent="your-agent", invoked_by="orchestrator", reason="Task X")
+```
 
-### Core Docs
-- **[AGENT_TRACKING_SYSTEM.md](.subagent/AGENT_TRACKING_SYSTEM.md)** - Complete technical specification
-- **[STORAGE_ARCHITECTURE.md](.subagent/STORAGE_ARCHITECTURE.md)** - Storage strategy & capacity planning
-- **[TRACKING_QUICK_REFERENCE.md](.subagent/TRACKING_QUICK_REFERENCE.md)** - Quick lookup guide
+## Requirements (single source)
 
-### Setup Guides
-- **[SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** - Step-by-step installation
-- **[INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md)** - Integrate with existing projects
-- **[GOOGLE_DRIVE_SETUP.md](docs/GOOGLE_DRIVE_SETUP.md)** - Google Drive API setup
+### Observability and Governance Layer
+F001 Task Lifecycle and State Model (Done).
+User stories: US001 see current task stage, US002 track project progress.
+Acceptance criteria: AC001 task events exist; AC002 payload includes task_id, stage, summary;
+AC003 task state persisted in analytics DB; AC004 task progress stored and updated; AC005 dashboard
+shows percent complete for active tasks.
+Tasks: T001 add task lifecycle event types, T002 update metrics/ingestion, T003 add task state model.
 
-### Advanced
-- **[API_REFERENCE.md](docs/API_REFERENCE.md)** - Python API documentation
-- **[BEST_PRACTICES.md](docs/BEST_PRACTICES.md)** - Tips and patterns
-- **[MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)** - SQLite → MongoDB migration
+F002 Human-In-Loop Approvals and Risk Scoring (In progress).
+User story: US003 require approval for risky changes.
+Acceptance criteria: AC006 risk scoring computed for risky file ops; AC007 approval required event emitted
+when threshold exceeded; AC008 hooks can block action until approval is granted.
+Tasks: T004 risk heuristics, T005 approval events and hooks, T006 rollback guidance (pending).
 
----
+F003 Test Telemetry and Quality Signals (Done).
+User story: US004 see test status in real time.
+Acceptance criteria: AC009 test start and completion events exist; AC010 results include pass/fail and duration;
+AC011 dashboard shows last test status for current task.
+Tasks: T007 add test event types, T008 wire telemetry to dashboard and metrics.
 
-## 🔧 Technology Stack
+### Adapter SDK
+F001 Adapter SDK and Event Mapping (Done).
+User story: integrate a new tool quickly with map_event and emit.
+Acceptance criteria: adapter interface defined; supports sync/async emitters; minimal example documented.
+Tasks: T001 interface/registration, T002 mapping helpers/validation, T003 docs/examples.
 
-### MVP Phase (Free, Lightweight)
+F002 Built-in Adapters for Top Tools (In progress).
+User story: use existing tools without extra setup.
+Acceptance criteria: Aider adapter done; Continue adapter pending; OpenHands or Claude Code adapter pending.
+Tasks: T004 Aider adapter, T005 Continue adapter, T006 OpenHands/Claude adapter.
 
-| Component | Technology | Cost |
-|-----------|-----------|------|
-| Activity logs | JSONL (gzip) | $0 |
-| Snapshots | JSON (tar.gz) | $0 |
-| Analytics | SQLite | $0 |
-| Backup | Google Drive API | $0 |
-| **Total** | | **$0/month** |
+F003 Privacy and Redaction Controls (Done).
+User story: control what data is captured.
+Acceptance criteria: redaction rules support paths and regex; allowlist per adapter.
+Tasks: T007 redaction configuration, T008 apply redaction in adapter pipeline.
 
-### Mature Phase (Optional, Still Free/Cheap)
+### Dashboard UX
+F001 Task Strip and Session Summaries (In progress).
+User stories: US001 task strip with stage/status, US002 concise session summaries.
+Acceptance criteria: AC001 task strip shows task/stage/ETA; AC002 task strip collapses; AC003 summary includes
+changes/tests/cost/risks; AC004 summary available in dashboard and exportable.
+Tasks: T001 task strip UI done, T002 session summary card/export done.
 
-| Component | Technology | Cost |
-|-----------|-----------|------|
-| Analytics | MongoDB Atlas Free Tier | $0 |
-| Archive | AWS S3 Glacier Deep Archive | $0.001/GB/mo |
-| **Total** | | **<$0.01/month** |
+F002 Alerts and Risk Signals (Not started).
+User story: US003 alerts only when needed.
+Acceptance criteria: AC005 alerts drawer shows severity and recommended action; AC006 alerts collapse after ack.
+Tasks: T003 alerts drawer, T004 wire alerts to risk/test events.
 
----
+F003 Focus Mode and Filters (Not started).
+User story: US004 hide non-essential data.
+Acceptance criteria: AC007 focus mode persists; AC008 event stream supports severity/task filters.
+Tasks: T005 focus mode toggle, T006 event stream filters.
 
-## 💾 Storage Requirements
+### Status Ribbon Observability Overlay (optional)
+Goal: a single-line status ribbon for Claude Code, Codex CLI, and generic terminals.
+Modes: Minimal, Balanced, Power. Degrade order: alerts, task, progress, context, spend, files, tools.
 
-### Local Storage
-- **Current session**: ~10 MB
-- **Max (current + previous)**: ~20 MB
-- **SQLite DB**: ~5-10 MB per month
+Core requirements:
+- FR1 StatusSnapshot data model (serializable JSON state for rendering).
+- FR2 CLI render command: `subagent ui ribbon --mode balanced --width 117 --format plain|ansi|tmux`.
+- FR3 Inspector command: `subagent ui inspect --width 117`.
+- FR4 UI daemon that subscribes to events and writes snapshots on a cadence.
 
-### Google Drive
-- **Per phase**: ~200 MB (compressed)
-- **4 phases (MVP)**: ~800 MB
-- **Usage**: 0.04% of 2TB free tier
+StatusSnapshot fields (condensed):
+```
+timestamp_ms
+workspace: project_dir, cwd
+agent_session: active_agent_name, active_model_id, provider
+task: current_task_id, current_task_title, current_task_phase, next_task_id, task_started_ms, last_activity_ms,
+      stuck_score/idle_seconds
+progress: mode, phase_index/phase_total, complete_pct, bar_text
+files: changed_count, created_count, last_touched_path
+usage: context_pct, tokens_used/window, cost_run_usd, cost_daily_usd/budget, cost_weekly_usd/budget
+tools: calls_shell, calls_fs, calls_web, calls_other
+alerts: list of {severity, code, message}
+```
 
-### Long-Term (AWS S3)
-- **Per phase**: ~200 MB
-- **10 phases**: ~2 GB
-- **Cost**: $0.002/month
+### Advanced features already implemented (not fully surfaced)
+- PRD management system (parser, schemas, state, progress stats).
+- Event bus (pub/sub with async handlers).
+- Agent coordinator (scout/plan/build workflow).
+- Context optimizer.
+- Analytics engine and fleet monitor.
+- Dashboard server (observability layer).
 
-**Total cost for MVP**: **$0**
-**Total cost for mature system**: **<$0.01/month**
+## Tracking and roadmap (single source)
 
----
+### Pivot phases (current)
+Phase 0 Quick wins and dogfood: task lifecycle events, session summaries, task strip, test telemetry (Done).
+Phase 1 Task state + metrics: persist task state and show progress metrics (In progress).
+Phase 2 Adapter SDK MVP: adapter interface, redaction/allowlist, pilot adapter (In progress).
+Phase 3 Approvals + risk scoring UX: approvals queue, blocking hooks, alert UX (In progress).
+Phase 4 UX polish + focus mode: filters, summaries, export (Planned).
+Phase 5 Release + adoption: guided setup, second adapter (Planned).
 
-## 🎯 Key Benefits
+### Blockers requiring troubleshooting or human validation
+- Live provider validation (credentials + opt-in)
+- MCP end-to-end smoke test with Claude Code
+- Approval UX calibration to avoid false blocks/noise
 
-### 1. Never Lose Work
-- Complete audit trail of all changes
-- Recover from any point in time
-- Survives crashes, token limits, errors
+### Phase 0 critical fixes (complete)
+- BackupManager high-level methods added and integrated.
+- Deprecated datetime.utcnow replaced with timezone-aware timestamps.
+- Thread safety fixes for parent event tracking.
+- Atomic file operations and retry on snapshot failure.
+- Log rotation and event ID format updates.
 
-### 2. Massive Token Savings
-- 90% reduction on status checks
-- 95% reduction on session resume
-- 85-90% average savings on recovery
+### Known TODOs (non-blocking metrics)
+- Publish AGENT_BLOCKED event in `src/core/hooks_manager.py`.
+- Track session duration and tokens in `src/core/activity_logger_compat.py`.
+- Determine session success from exit status in `src/core/analytics_db_subscriber.py`.
+- Capture snapshot size bytes in `src/core/snapshot_manager_subscriber.py`.
 
-### 3. Debug Agent Behavior
-- "Why did it choose that agent?" → Check decision log
-- "Where did it fail?" → Error event with full context
-- "How long did it take?" → Performance metrics
+### Quality audit summary (condensed)
+- Code quality grade: A-; test coverage ~85%.
+- Documentation sprawl resolved by consolidating into this file.
+- Recommended next actions: resolve the 4 TODOs, finish approvals UX, finish dashboard focus/alerts.
 
-### 4. Continuous Improvement
-- Track agent performance over time
-- Identify slow operations → optimize
-- Learn from errors → prevent recurrence
-- Data-driven agent prompt improvements
+## Architecture overview
+Data flow:
+Agent actions -> Activity Logger -> Analytics DB -> Snapshot Manager -> Backup Manager
 
-### 5. Cost Optimization
-- Free storage (Google Drive 2TB)
-- Local-first (fast, offline-capable)
-- Optional cloud analytics (MongoDB free tier)
-- Cheap archive (S3 $0.001/GB/month)
+Storage tiers:
+- Local (fast): JSONL logs, JSON snapshots, SQLite analytics, session handoffs
+- Google Drive (sync): optional, backs up current phase sessions
+- AWS S3 (archive): planned for mature phase
 
----
+Key components:
+- Core tracking: `src/core/`
+- CLI: `src/subagent_cli/`
+- Observability: `src/observability/`
+- Adapters: `src/adapters/`
+- MCP server: `src/subagent/mcp/`
+- Tests: `tests/`
 
-## 🚀 Roadmap
+## Data directories and retention
+Default data root is `.subagent/` with legacy `.claude/` support.
 
-### ✅ Phase 0: Core System (Complete)
-- [x] Activity logging (JSONL)
-- [x] State snapshots (JSON)
-- [x] SQLite analytics
-- [x] Documentation
+Runtime data locations:
+- `.subagent/logs/` activity logs (JSONL, gzip)
+- `.subagent/state/` snapshots (JSON)
+- `.subagent/analytics/` SQLite analytics
+- `.subagent/handoffs/` session summaries
+- `.subagent/quality/` quality gate reports
+- `.subagent/approvals/` approval queue state
+- `.subagent/observability/` dashboard/monitor runtime state
 
-### 🟡 Phase 1: Backup & Recovery (In Progress)
-- [x] Google Drive backup design
-- [ ] Backup manager implementation
-- [ ] Automatic session handoff
-- [ ] Recovery UI
+Retention policy (local-first): current + previous session only; analytics DB retained; backups optional.
 
-### 🔵 Phase 2: Analytics & Insights (Planned)
-- [ ] End-of-phase review automation
-- [ ] Performance metrics dashboard
-- [ ] Error pattern analysis
-- [ ] Agent optimization recommendations
+## Configuration
+Important files:
+- `.subagent/config.yaml` core settings
+- `.subagent/config/permissions.yaml` tool/path/network permissions
+- `.subagent/config/providers.yaml` provider adapter config
 
-### 🔵 Phase 3: Advanced Features (Future)
-- [ ] MongoDB Atlas integration
-- [ ] AWS S3 archival
-- [ ] Web dashboard for analytics
-- [ ] Multi-developer collaboration
+Selected environment variables:
+- `SUBAGENT_DATA_DIR` override data root
+- `SUBAGENT_PROJECT_DIR` MCP server project root
+- `SUBAGENT_PROVIDER_LIVE` or `SUBAGENT_LIVE_PROVIDERS` enable live providers
+- `SUBAGENT_APPROVAL_THRESHOLD` risk threshold for approvals
+- `SUBAGENT_APPROVALS_BYPASS=1` bypass approvals (dev only)
+- `SUBAGENT_MIGRATE_LEGACY=1` create `.subagent` symlink to legacy `.claude`
 
----
+## CLI (high level)
+- `subagent init` create `.subagent/` structure
+- `subagent status [--json] [--watch] [--interval]` show system status
+- `subagent session-start|session-end|session-list`
+- `subagent task add|update|complete|list|show`
+- `subagent logs [--follow] [--count N] [--task-id ID]`
+- `subagent emit-task-start|emit-task-stage|emit-task-complete`
+- `subagent emit-test-start|emit-test-complete`
+- `subagent tool check|simulate|read|write|edit`
+- `subagent agent spawn|pause|resume|terminate|list|show`
+- `subagent quality run [--test-suite LABEL] [--task-id ID]`
+- `subagent metrics --scope session|task|project [--export report.md]`
+- `subagent approval list|approve|deny`
+- `subagent dashboard start|stop [--host HOST --port PORT]`
+- `subagent monitor start|stop [--host HOST --port PORT]`
 
-## 🤝 Contributing
+## MCP integration
+Start the MCP JSON-RPC server:
+```bash
+python -m subagent.mcp.server
+```
+Point it at a repo:
+```bash
+export SUBAGENT_PROJECT_DIR=/path/to/project
+```
+Claude Code config example:
+```json
+{
+  "mcpServers": {
+    "subagent": {
+      "command": "python",
+      "args": ["-m", "subagent.mcp.server"],
+      "env": {"SUBAGENT_PROJECT_DIR": "/path/to/project"}
+    }
+  }
+}
+```
 
-Contributions welcome! This system is designed to be:
-- **Universal** - Works with any Claude Code project
-- **Modular** - Easy to extend and customize
-- **Open** - MIT license, use anywhere
+## Adapter SDK (summary)
+Adapters map tool-specific events into the standard event schema.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Minimal usage:
+```python
+from src.adapters import AiderAdapter, AdapterRegistry
 
----
+adapter = AiderAdapter()
+AdapterRegistry.register(adapter)
+adapter.handle_event({"type": "task_started", "task_id": "task_001"})
+```
 
-## 📄 License
+Redaction and allowlist example:
+```python
+from src.adapters import AiderAdapter, RedactionRule
 
-MIT License - see [LICENSE](LICENSE) for details.
+rules = [RedactionRule(path="prompt", pattern=r"sk-[A-Za-z0-9]+")]
+adapter = AiderAdapter(allowlist=["type", "task_id", "task_name", "stage", "prompt"], redaction_rules=rules)
+```
 
----
+## Provider adapters (summary)
+Providers are opt-in for live calls. Example `.subagent/config/providers.yaml`:
+```yaml
+providers:
+  live: true
+  order: [claude, ollama, gemini]
+  claude:
+    model: claude-sonnet-3.5
+    api_key: "..."
+  ollama:
+    model: llama3
+    endpoint: "http://localhost:11434"
+  gemini:
+    model: gemini-2.0-pro
+    api_key: "..."
+```
 
-## 🙏 Acknowledgments
+Suggested usage (cost-optimized):
+- Claude Sonnet 3.5 for complex refactors and architecture.
+- Gemini Flash for general tasks and test generation.
+- Ollama for local or fast review tasks.
+- Perplexity for web research (if enabled).
 
-Built with:
-- **Claude Code** - Anthropic's AI coding assistant
-- **Google Drive API** - Reliable cloud backup
-- **SQLite** - Lightweight, fast analytics
-- **MongoDB Atlas** - Scalable cloud database (mature phase)
-- **AWS S3** - Cost-effective long-term archive
+## Permissions and approvals
+Permissions live in `.subagent/config/permissions.yaml` and gate tools, paths,
+and network access. Example:
+```yaml
+permissions:
+  default_profile: default_worker
+  profiles:
+    default_worker:
+      tools: ["read", "write", "edit", "provider"]
+      paths_allowed: ["src/**", "tests/**"]
+      paths_forbidden: [".env*", "*.secret", ".subagent/config.yaml"]
+      can_run_bash: false
+      can_access_network: false
+    elevated:
+      can_run_bash: true
+      can_access_network: true
+```
 
-Inspired by:
-- **Git** - Version control for code
-- **Observability tools** - DataDog, New Relic, Sentry
-- **Time-machine backups** - macOS Time Machine
+CLI helpers:
+- `subagent tool check --tool read --path src/app.py`
+- `subagent tool simulate --tool read --path src/app.py`
+- `subagent tool read src/app.py`
+- `subagent tool write src/app.py --content "print('hi')"`
+- `subagent tool edit src/app.py --find "hi" --replace "hello"`
 
----
+Approvals queue:
+- `subagent approval list`
+- `subagent approval approve APPROVAL_ID --actor name --reason "..."`
+- `subagent approval deny APPROVAL_ID --actor name --reason "..."`
 
-## 📞 Contact
+## Quality gates
+`subagent quality run` can execute:
+- pytest gate
+- coverage gate
+- diff review gate
+- secret scan gate
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/subAgentTracking/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/subAgentTracking/discussions)
-- **Email**: your.email@example.com
+## Dashboard and realtime monitor
+- Dashboard server: `subagent dashboard start`
+- WebSocket monitor: `subagent monitor start`
 
----
+## Testing and linting
+```bash
+pytest tests/ -v
+pytest tests/ --cov=src --cov-report=html
+black src/ tests/
+flake8 src/ tests/
+mypy src/
+```
 
-## ⭐ Star This Project
+## Performance highlights (from tests/test_performance.py)
+- Logging: ~0.007 ms per event
+- Snapshot creation: ~4 ms
+- Snapshot restore: ~0.05 ms
+- Analytics queries: <1 ms average
+- Throughput: ~95,000 events/sec
 
-If this tracking system saves you time and tokens, please star this repo!
+## Changelog (condensed)
+Unreleased additions:
+- Test telemetry emitted from `subagent quality run`.
+- Approval-required events with risk scoring in tool proxy path.
+- Approval queue persistence and CLI commands.
+- Task state persistence in analytics DB and progress metrics.
+- Adapter SDK with redaction/allowlist and Aider adapter.
+- Dashboard server and realtime monitor commands.
 
----
+0.1.0 (2025-11-12): core logging, snapshots, analytics, backup integration, and tests.
 
-**Version**: 0.1.0 (MVP)
-**Status**: Active development
-**Last Updated**: 2025-10-29
+## Legacy and compatibility
+- The project pivoted from a full agent control system to a neutral observability/governance layer.
+- Legacy `.claude/` data roots are supported; `.subagent/` is the default.
+- Previous control system phases are archived; current focus is the pivot roadmap above.

@@ -2,6 +2,9 @@ import asyncio
 import gzip
 import json
 import os
+import signal
+import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,32 +25,75 @@ from src.core.activity_logger_compat import (
     log_task_completed,
     log_test_run_started,
     log_test_run_completed,
+    log_approval_granted,
+    log_approval_denied,
 )
 from src.core.activity_logger_subscriber import (
     initialize_activity_logger_subscriber,
     shutdown_activity_logger_subscriber,
 )
+from src.core.agent_registry import AgentRegistry, AgentStatus
 from src.core.bootstrap import ensure_initialized
 from src.core.config import Config
 from src.core import session_manager
 from src.core.prd_state import prd_exists
 from src.core.reference_checker import get_reference_checker
+from src.core.approval_store import list_approvals, record_decision
+from src.orchestration.agent_lifecycle import AgentLifecycle
+from src.orchestration.agent_monitor import AgentMonitor
+from src.orchestration.agent_spawner import AgentSpawner
+from src.orchestration.permissions import PermissionManager
+from src.orchestration.tool_proxy import ToolProxy
+from src.orchestration.file_tools import FileToolProxy
+from src.quality.runner import QualityGateRunner
+from src.core.metrics_report import generate_metrics_report, render_metrics_markdown
 
 app = typer.Typer(help="SubAgent Control CLI (Phase 1 skeleton)")
-
-SUBAGENT_ROOT = Path(".subagent")
-TASKS_FILE = SUBAGENT_ROOT / "tasks" / "tasks.json"
-CONFIG_PATH = SUBAGENT_ROOT / "config.yaml"
-
-# Ensure core config uses .subagent for data directories
-os.environ.setdefault("SUBAGENT_DATA_DIR", str(SUBAGENT_ROOT))
+task_app = typer.Typer(help="Task management")
+app.add_typer(task_app, name="task")
+agent_app = typer.Typer(help="Agent lifecycle management")
+app.add_typer(agent_app, name="agent")
+tool_app = typer.Typer(help="Tool permission checks")
+app.add_typer(tool_app, name="tool")
+quality_app = typer.Typer(help="Quality gates")
+app.add_typer(quality_app, name="quality")
+approval_app = typer.Typer(help="Approval queue")
+app.add_typer(approval_app, name="approval")
+dashboard_app = typer.Typer(help="Dashboard server")
+app.add_typer(dashboard_app, name="dashboard")
+monitor_app = typer.Typer(help="Realtime WebSocket monitor")
+app.add_typer(monitor_app, name="monitor")
 
 _AUTO_SESSION_SKIP = {
     "init",
     "session-start",
     "session-end",
     "session-list",
+    "metrics",
+    "dashboard",
+    "monitor",
     "help",
+}
+
+_DEFAULT_PERMISSIONS = {
+    "permissions": {
+        "default_profile": "default_worker",
+        "profiles": {
+            "default_worker": {
+                "tools": ["read", "write", "edit", "provider"],
+                "paths_allowed": ["src/**", "tests/**"],
+                "paths_forbidden": [".env*", "*.secret", ".subagent/config.yaml"],
+                "can_spawn_subagents": False,
+                "can_modify_tests": False,
+                "can_run_bash": False,
+                "can_access_network": False,
+            },
+            "elevated": {
+                "can_run_bash": True,
+                "can_access_network": True,
+            },
+        },
+    }
 }
 
 
@@ -58,16 +104,20 @@ _AUTO_SESSION_SKIP = {
 
 def _ensure_subagent_dirs() -> None:
     """Create the .subagent directory structure expected by the CLI."""
+    root = Path(_load_config()["data_dir"])
     subdirs = [
-        SUBAGENT_ROOT,
-        SUBAGENT_ROOT / "logs",
-        SUBAGENT_ROOT / "state",
-        SUBAGENT_ROOT / "sessions",
-        SUBAGENT_ROOT / "tasks",
-        SUBAGENT_ROOT / "handoffs",
-        SUBAGENT_ROOT / "quality",
-        SUBAGENT_ROOT / "analytics",
-        SUBAGENT_ROOT / "credentials",
+        root,
+        root / "config",
+        root / "logs",
+        root / "state",
+        root / "sessions",
+        root / "tasks",
+        root / "handoffs",
+        root / "quality",
+        root / "approvals",
+        root / "observability",
+        root / "analytics",
+        root / "credentials",
     ]
     for d in subdirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -76,20 +126,112 @@ def _ensure_subagent_dirs() -> None:
             gitkeep.touch()
 
 
+def _get_config_path() -> Path:
+    data_dir_override = os.getenv("SUBAGENT_DATA_DIR")
+    if data_dir_override:
+        return Path(data_dir_override) / "config.yaml"
+    return Path(".subagent") / "config.yaml"
+
+
+def _get_tasks_file(config_values: Optional[Dict[str, Any]] = None) -> Path:
+    cfg = config_values or _load_config()
+    return Path(cfg["data_dir"]) / "tasks" / "tasks.json"
+
+
+def _get_permissions_path(config_values: Optional[Dict[str, Any]] = None) -> Path:
+    cfg = config_values or _load_config()
+    return Path(cfg["data_dir"]) / "config" / "permissions.yaml"
+
+
+def _get_observability_dir() -> Path:
+    root = Path(_load_config()["data_dir"])
+    obs_dir = root / "observability"
+    obs_dir.mkdir(parents=True, exist_ok=True)
+    return obs_dir
+
+
+def _pid_path(name: str) -> Path:
+    return _get_observability_dir() / f"{name}.pid"
+
+
+def _log_path(name: str) -> Path:
+    return _get_observability_dir() / f"{name}.log"
+
+
+def _read_pid(pid_path: Path) -> Optional[int]:
+    try:
+        return int(pid_path.read_text().strip())
+    except Exception:
+        return None
+
+
+def _pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _start_background(cmd: List[str], name: str) -> Optional[int]:
+    pid_path = _pid_path(name)
+    if pid_path.exists():
+        pid = _read_pid(pid_path)
+        if pid and _pid_running(pid):
+            typer.echo(f"{name} already running (pid {pid}).")
+            return None
+        pid_path.unlink(missing_ok=True)
+
+    log_path = _log_path(name)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = log_path.open("a", encoding="utf-8")
+    proc = subprocess.Popen(
+        cmd,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    log_file.close()
+    pid_path.write_text(str(proc.pid))
+    typer.echo(f"Started {name} (pid {proc.pid}). Logs: {log_path}")
+    return proc.pid
+
+
+def _stop_background(name: str) -> None:
+    pid_path = _pid_path(name)
+    pid = _read_pid(pid_path)
+    if not pid:
+        typer.echo(f"{name} is not running.")
+        return
+    if not _pid_running(pid):
+        pid_path.unlink(missing_ok=True)
+        typer.echo(f"{name} pid file removed (process not running).")
+        return
+    os.kill(pid, signal.SIGTERM)
+    time.sleep(0.2)
+    if _pid_running(pid):
+        os.kill(pid, signal.SIGKILL)
+    pid_path.unlink(missing_ok=True)
+    typer.echo(f"Stopped {name} (pid {pid}).")
+
 def _load_tasks() -> list[dict]:
-    if TASKS_FILE.exists():
+    tasks_file = _get_tasks_file()
+    if tasks_file.exists():
         try:
-            return json.loads(TASKS_FILE.read_text())
+            return json.loads(tasks_file.read_text())
         except Exception:
             return []
     return []
 
 
 def _save_tasks(tasks: list[dict]) -> None:
-    TASKS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = TASKS_FILE.with_suffix(".tmp")
+    tasks_file = _get_tasks_file()
+    tasks_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = tasks_file.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(tasks, indent=2))
-    tmp_path.replace(TASKS_FILE)
+    tmp_path.replace(tasks_file)
 
 
 def _next_task_id(tasks: list[dict]) -> str:
@@ -99,17 +241,18 @@ def _next_task_id(tasks: list[dict]) -> str:
 
 def _load_config() -> Dict[str, Any]:
     """Load CLI config from YAML if present (with defaults)."""
+    config_path = _get_config_path()
     defaults: Dict[str, Any] = {
         "task_defaults": {"priority": 3},
         "status": {"watch_interval": 2.0},
-        "data_dir": str(SUBAGENT_ROOT),
+        "data_dir": str(config_path.parent),
     }
-    if CONFIG_PATH.exists():
+    if config_path.exists():
         try:
-            data = yaml.safe_load(CONFIG_PATH.read_text()) or {}
+            data = yaml.safe_load(config_path.read_text()) or {}
             defaults.update(_validate_cli_config(data, defaults))
         except Exception:
-            typer.echo("Warning: Failed to parse .subagent/config.yaml, using defaults.")
+            typer.echo(f"Warning: Failed to parse {config_path}, using defaults.")
     return defaults
 
 
@@ -153,9 +296,10 @@ def _validate_cli_config(config_data: Dict[str, Any], defaults: Dict[str, Any]) 
 
 
 def _save_default_config() -> None:
-    if not CONFIG_PATH.exists():
-        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(
+    config_path = _get_config_path()
+    if not config_path.exists():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
             yaml.safe_dump(
                 {
                     "task_defaults": {"priority": 3},
@@ -163,6 +307,14 @@ def _save_default_config() -> None:
                 }
             )
         )
+
+
+def _write_permissions_template() -> None:
+    permissions_path = _get_permissions_path()
+    if permissions_path.exists():
+        return
+    permissions_path.parent.mkdir(parents=True, exist_ok=True)
+    permissions_path.write_text(yaml.safe_dump(_DEFAULT_PERMISSIONS))
 
 
 def _should_auto_session(command: Optional[str]) -> bool:
@@ -229,8 +381,8 @@ def _maybe_run_reference_check(
 
 
 def _start_cli_session(command: Optional[str]) -> Dict[str, Any]:
-    ensure_initialized(prompt_if_needed=True)
     cfg = _load_core_config(reload=True)
+    ensure_initialized(prompt_if_needed=True)
 
     active_session_id = _get_active_session_id(cfg)
     auto_started = False
@@ -306,6 +458,7 @@ def init() -> None:
     os.environ.setdefault("SUBAGENT_DATA_DIR", cfg["data_dir"])
     _ensure_subagent_dirs()
     _save_default_config()
+    _write_permissions_template()
     typer.echo(f"Initialized {Path(cfg['data_dir']).resolve()} directory structure.")
 
 
@@ -315,8 +468,8 @@ def session_start(
     note: Optional[str] = typer.Option(None, "--note", "-n", help="Metadata note"),
 ) -> None:
     """Start a new session and persist metadata."""
-    ensure_initialized(prompt_if_needed=True)
     cfg = _load_core_config(reload=True)
+    ensure_initialized(prompt_if_needed=True)
     meta = {"note": note} if note else {}
     sid = session_manager.start_session(session_id=session_id, metadata=meta)
     if cfg.activity_log_enabled:
@@ -340,6 +493,7 @@ def session_end(
     note: Optional[str] = typer.Option(None, "--note", "-n", help="Notes"),
 ) -> None:
     """End a session and mark status."""
+    _load_core_config(reload=True)
     result = session_manager.end_session(session_id=session_id, status=status, notes=note)
     if not result.get("success"):
         typer.echo(f"Failed to end session: {result.get('error')}")
@@ -352,6 +506,7 @@ def session_end(
 @app.command("session-list")
 def session_list(json_output: bool = typer.Option(False, "--json", help="Output JSON")) -> None:
     """List persisted sessions."""
+    _load_core_config(reload=True)
     sessions = session_manager.list_sessions()
     if json_output:
         typer.echo(json.dumps(sessions, indent=2))
@@ -431,6 +586,70 @@ def status(
         render()
 
 
+@app.command("metrics")
+def metrics(
+    scope: str = typer.Option("session", "--scope", help="Scope: session, task, project"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID (session scope)"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", help="Task ID (task scope)"),
+    compare: bool = typer.Option(True, "--compare/--no-compare", help="Include naive comparison"),
+    export: Optional[Path] = typer.Option(None, "--export", "-e", help="Write markdown report"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Show cost and quality metrics."""
+    _load_core_config(reload=True)
+    try:
+        report = generate_metrics_report(
+            scope=scope,
+            session_id=session_id,
+            task_id=task_id,
+            compare_naive=compare,
+        )
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(code=1)
+
+    if export:
+        export_path = Path(export)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        export_path.write_text(render_metrics_markdown(report))
+        if not json_output:
+            typer.echo(f"Wrote report to {export_path}")
+
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        return
+
+    metrics_payload = report.get("metrics", {})
+    cost = metrics_payload.get("cost", {})
+    tokens = metrics_payload.get("tokens", {})
+    tasks = metrics_payload.get("tasks", {})
+    tests = metrics_payload.get("tests", {})
+    agents = metrics_payload.get("agents", {})
+    quality = report.get("quality", {}) or {}
+    naive = report.get("naive_comparison") or {}
+
+    typer.echo(f"Scope:            {report.get('scope')}")
+    if report.get("session_id"):
+        typer.echo(f"Session:          {report.get('session_id')}")
+    if report.get("task_id"):
+        typer.echo(f"Task:             {report.get('task_id')}")
+    typer.echo(f"Events:           {metrics_payload.get('events_total', 0)}")
+    typer.echo(f"Agents:           {agents.get('completed', 0)} completed, {agents.get('failed', 0)} failed")
+    typer.echo(f"Tasks:            {tasks.get('started', 0)} started, {tasks.get('completed', 0)} completed")
+    typer.echo(f"Tests:            {tests.get('passed', 0)} passed, {tests.get('failed', 0)} failed")
+    typer.echo(f"Tokens:           {tokens.get('total', 0)} total")
+    typer.echo(f"Cost:             ${cost.get('total', 0.0)} ({cost.get('source', 'none')})")
+    if naive:
+        savings = naive.get("savings_pct")
+        savings_label = f"{savings}%" if savings is not None else "n/a"
+        typer.echo(
+            f"Naive cost:       ${naive.get('naive_cost')} "
+            f"(x{naive.get('naive_multiplier')}, savings {savings_label})"
+        )
+    if quality:
+        typer.echo(f"Quality reports:  {quality.get('report_count', 0)}")
+
+
 def _render_task(task: dict, json_output: bool = False) -> None:
     if json_output:
         typer.echo(json.dumps(task, indent=2))
@@ -455,6 +674,26 @@ def _render_task(task: dict, json_output: bool = False) -> None:
         typer.echo(f"  created:   {task.get('created_at')}")
     if task.get("status"):
         typer.echo(f"  status:    {task.get('status')}")
+
+
+def _render_agent(agent: dict, json_output: bool = False) -> None:
+    if json_output:
+        typer.echo(json.dumps(agent, indent=2))
+        return
+
+    typer.echo(f"{agent.get('agent_id')} [{agent.get('status', 'unknown')}]")
+    typer.echo(f"  type:      {agent.get('agent_type')}")
+    typer.echo(f"  model:     {agent.get('model')}")
+    if agent.get("session_id"):
+        typer.echo(f"  session:   {agent.get('session_id')}")
+    if agent.get("task_id"):
+        typer.echo(f"  task:      {agent.get('task_id')}")
+    if agent.get("started_at"):
+        typer.echo(f"  started:   {agent.get('started_at')}")
+    if agent.get("completed_at"):
+        typer.echo(f"  completed: {agent.get('completed_at')}")
+    if agent.get("last_heartbeat"):
+        typer.echo(f"  heartbeat: {agent.get('last_heartbeat')}")
 
 
 @app.command("task-add")
@@ -497,6 +736,10 @@ def task_update(
     status: Optional[str] = typer.Option(None, "--status", "-s", help="New status"),
     priority: Optional[int] = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
     description: Optional[str] = typer.Option(None, "--description", "-d", help="Updated description"),
+    task_type: Optional[str] = typer.Option(None, "--type", "-t", help="Task type/category"),
+    deadline: Optional[str] = typer.Option(None, "--deadline", help="Deadline (ISO date/time or freeform)"),
+    criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Replace acceptance criteria (repeatable)"),
+    context: List[str] = typer.Option([], "--context", "-c", help="Replace context notes (repeatable)"),
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ) -> None:
     """Update a task's status/priority/description."""
@@ -510,6 +753,14 @@ def task_update(
                 task["priority"] = priority
             if description:
                 task["description"] = description
+            if task_type is not None:
+                task["type"] = task_type
+            if deadline is not None:
+                task["deadline"] = deadline
+            if criteria:
+                task["acceptance_criteria"] = criteria
+            if context:
+                task["context"] = context
             updated = True
             break
     if not updated:
@@ -529,6 +780,7 @@ def task_complete(task_id: str = typer.Argument(..., help="Task ID")) -> None:
     for task in tasks:
         if task.get("id") == task_id:
             task["status"] = "done"
+            task["completed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             _save_tasks(tasks)
             typer.echo(f"Completed {task_id}")
             return
@@ -572,6 +824,687 @@ def task_show(
         typer.echo(f"Task not found: {task_id}")
         raise typer.Exit(code=1)
     _render_task(task, json_output=json_output)
+
+
+@task_app.command("add")
+def task_add_group(
+    description: str = typer.Argument(..., help="Task description"),
+    priority: int = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
+    task_type: Optional[str] = typer.Option(None, "--type", "-t", help="Task type/category"),
+    deadline: Optional[str] = typer.Option(None, "--deadline", "-d", help="Deadline (ISO date/time or freeform)"),
+    criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Acceptance criteria (repeatable)"),
+    status: str = typer.Option("pending", "--status", "-s", help="Task status"),
+    context: List[str] = typer.Option([], "--context", "-c", help="Additional context/notes (repeatable)"),
+) -> None:
+    """Create a new task."""
+    task_add(
+        description=description,
+        priority=priority,
+        task_type=task_type,
+        deadline=deadline,
+        criteria=criteria,
+        status=status,
+        context=context,
+    )
+
+
+@task_app.command("update")
+def task_update_group(
+    task_id: str = typer.Argument(..., help="Task ID"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="New status"),
+    priority: Optional[int] = typer.Option(None, "--priority", "-p", help="Priority 1-5"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="Updated description"),
+    task_type: Optional[str] = typer.Option(None, "--type", "-t", help="Task type/category"),
+    deadline: Optional[str] = typer.Option(None, "--deadline", help="Deadline (ISO date/time or freeform)"),
+    criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Replace acceptance criteria (repeatable)"),
+    context: List[str] = typer.Option([], "--context", "-c", help="Replace context notes (repeatable)"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Update a task."""
+    task_update(
+        task_id=task_id,
+        status=status,
+        priority=priority,
+        description=description,
+        task_type=task_type,
+        deadline=deadline,
+        criteria=criteria,
+        context=context,
+        json_output=json_output,
+    )
+
+
+@task_app.command("complete")
+def task_complete_group(task_id: str = typer.Argument(..., help="Task ID")) -> None:
+    """Mark a task as done."""
+    task_complete(task_id=task_id)
+
+
+@task_app.command("list")
+def task_list_group(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
+    open_only: bool = typer.Option(False, "--open", help="Show only non-done tasks"),
+) -> None:
+    """List tasks."""
+    task_list(json_output=json_output, status=status, open_only=open_only)
+
+
+@task_app.command("show")
+def task_show_group(
+    task_id: str = typer.Argument(..., help="Task ID to show"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Show a single task by ID."""
+    task_show(task_id=task_id, json_output=json_output)
+
+
+@approval_app.command("list")
+def approval_list(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
+    show_all: bool = typer.Option(False, "--all", help="Show all approvals"),
+) -> None:
+    """List approval requests."""
+    if show_all:
+        status = None
+    elif status is None:
+        status = "required"
+    approvals = list_approvals(status=status)
+    if json_output:
+        typer.echo(json.dumps(approvals, indent=2))
+        return
+    if not approvals:
+        typer.echo("No approvals found.")
+        return
+    for approval in approvals:
+        approval_id = approval.get("approval_id", "--")
+        approval_status = approval.get("status", "unknown")
+        tool = approval.get("tool", "unknown")
+        operation = approval.get("operation")
+        file_path = approval.get("file_path")
+        risk = approval.get("risk_score")
+        line_parts = [f"{approval_id} [{approval_status}]", tool]
+        if operation:
+            line_parts.append(operation)
+        if file_path:
+            line_parts.append(file_path)
+        if risk is not None:
+            line_parts.append(f"risk={risk:.2f}")
+        typer.echo(" ".join(line_parts))
+
+
+@approval_app.command("approve")
+def approval_approve(
+    approval_id: str = typer.Argument(..., help="Approval ID"),
+    actor: Optional[str] = typer.Option("user", "--actor", help="Decision actor"),
+    reason: Optional[str] = typer.Option(None, "--reason", "-r", help="Decision rationale"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Approve a pending approval request."""
+    try:
+        record = record_decision(approval_id, "granted", actor=actor, reason=reason)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1)
+    if not record:
+        typer.echo(f"Approval not found: {approval_id}")
+        raise typer.Exit(code=1)
+    decision = record.decision or {}
+    try:
+        log_approval_granted(
+            approval_id=record.approval_id,
+            actor=actor,
+            reason=reason,
+            tool=record.tool,
+            operation=record.operation,
+            file_path=record.file_path,
+            risk_score=record.risk_score,
+            reasons=record.reasons,
+            summary=record.summary,
+            decided_at=decision.get("decided_at"),
+            session_id=_resolve_session_id(None),
+        )
+    except Exception:
+        pass
+    if json_output:
+        typer.echo(json.dumps(record.to_dict(), indent=2))
+    else:
+        typer.echo(f"Approved {record.approval_id}")
+
+
+@approval_app.command("deny")
+def approval_deny(
+    approval_id: str = typer.Argument(..., help="Approval ID"),
+    actor: Optional[str] = typer.Option("user", "--actor", help="Decision actor"),
+    reason: Optional[str] = typer.Option(None, "--reason", "-r", help="Decision rationale"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Deny a pending approval request."""
+    try:
+        record = record_decision(approval_id, "denied", actor=actor, reason=reason)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1)
+    if not record:
+        typer.echo(f"Approval not found: {approval_id}")
+        raise typer.Exit(code=1)
+    decision = record.decision or {}
+    try:
+        log_approval_denied(
+            approval_id=record.approval_id,
+            actor=actor,
+            reason=reason,
+            tool=record.tool,
+            operation=record.operation,
+            file_path=record.file_path,
+            risk_score=record.risk_score,
+            reasons=record.reasons,
+            summary=record.summary,
+            decided_at=decision.get("decided_at"),
+            session_id=_resolve_session_id(None),
+        )
+    except Exception:
+        pass
+    if json_output:
+        typer.echo(json.dumps(record.to_dict(), indent=2))
+    else:
+        typer.echo(f"Denied {record.approval_id}")
+
+
+@agent_app.command("spawn")
+def agent_spawn(
+    agent_type: str = typer.Argument(..., help="Agent type"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", help="Related task ID"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID"),
+    model: Optional[str] = typer.Option(None, "--model", help="Model name override"),
+    invoked_by: str = typer.Option("user", "--invoked-by", help="Invoker name"),
+    reason: str = typer.Option("Manual agent spawn", "--reason", help="Spawn reason"),
+    task_type: Optional[str] = typer.Option(None, "--task-type", help="Task type for routing"),
+    context_tokens: int = typer.Option(0, "--context-tokens", help="Estimated context tokens"),
+    files: List[str] = typer.Option([], "--file", "-f", help="Context files (repeatable)"),
+    token_limit: Optional[int] = typer.Option(None, "--token-limit", help="Token budget"),
+    time_limit: Optional[int] = typer.Option(None, "--time-limit", help="Time budget (seconds)"),
+    cost_limit: Optional[float] = typer.Option(None, "--cost-limit", help="Cost budget (USD)"),
+    heartbeat_interval: Optional[int] = typer.Option(None, "--heartbeat-interval", help="Expected heartbeat interval (seconds)"),
+    heartbeat_timeout: Optional[int] = typer.Option(None, "--heartbeat-timeout", help="Heartbeat timeout (seconds)"),
+    sla_timeout: Optional[int] = typer.Option(None, "--sla-timeout", help="SLA timeout (seconds)"),
+    permission_profile: Optional[str] = typer.Option(None, "--permission-profile", help="Permission profile name"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Spawn a new agent record."""
+    _load_core_config(reload=True)
+    spawner = AgentSpawner()
+    budget: Dict[str, Any] = {}
+    if token_limit is not None:
+        budget["token_limit"] = token_limit
+    if time_limit is not None:
+        budget["time_limit_seconds"] = time_limit
+    if cost_limit is not None:
+        budget["cost_limit_usd"] = cost_limit
+    if heartbeat_interval is not None:
+        budget["heartbeat_interval_seconds"] = heartbeat_interval
+    if heartbeat_timeout is not None:
+        budget["heartbeat_timeout_seconds"] = heartbeat_timeout
+    if sla_timeout is not None:
+        budget["sla_timeout_seconds"] = sla_timeout
+    record = spawner.spawn(
+        agent_type=agent_type,
+        task_id=task_id,
+        session_id=_resolve_session_id(session_id),
+        model=model,
+        invoked_by=invoked_by,
+        reason=reason,
+        task_type=task_type,
+        context_tokens=context_tokens,
+        files=files,
+        budget=budget or None,
+        permission_profile=permission_profile,
+    )
+    if json_output:
+        typer.echo(json.dumps(record, indent=2))
+    else:
+        typer.echo(f"Spawned agent {record['agent_id']} ({record['agent_type']})")
+
+
+@agent_app.command("list")
+def agent_list(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+    status: Optional[AgentStatus] = typer.Option(None, "--status", help="Filter by status"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Filter by session ID"),
+    agent_type: Optional[str] = typer.Option(None, "--type", help="Filter by agent type"),
+) -> None:
+    """List agent records."""
+    _load_core_config(reload=True)
+    registry = AgentRegistry()
+    agents = registry.list_agents(
+        status=status.value if status else None,
+        session_id=session_id,
+        agent_type=agent_type,
+    )
+    if json_output:
+        typer.echo(json.dumps(agents, indent=2))
+        return
+    if not agents:
+        typer.echo("No agents found.")
+        return
+    for agent in agents:
+        _render_agent(agent, json_output=False)
+        typer.echo("")
+
+
+@agent_app.command("show")
+def agent_show(
+    agent_id: str = typer.Argument(..., help="Agent ID"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Show a single agent record."""
+    _load_core_config(reload=True)
+    registry = AgentRegistry()
+    agent = registry.get_agent(agent_id)
+    if not agent:
+        typer.echo(f"Agent not found: {agent_id}")
+        raise typer.Exit(code=1)
+    _render_agent(agent, json_output=json_output)
+
+
+@agent_app.command("pause")
+def agent_pause(
+    agent_id: str = typer.Argument(..., help="Agent ID"),
+    reason: Optional[str] = typer.Option(None, "--reason", help="Pause reason"),
+) -> None:
+    """Pause an agent."""
+    _load_core_config(reload=True)
+    lifecycle = AgentLifecycle()
+    agent = lifecycle.pause_agent(agent_id, reason=reason)
+    if not agent:
+        typer.echo(f"Agent not found: {agent_id}")
+        raise typer.Exit(code=1)
+    typer.echo(f"Paused {agent_id}")
+
+
+@agent_app.command("resume")
+def agent_resume(
+    agent_id: str = typer.Argument(..., help="Agent ID"),
+    reason: Optional[str] = typer.Option(None, "--reason", help="Resume reason"),
+) -> None:
+    """Resume a paused agent."""
+    _load_core_config(reload=True)
+    lifecycle = AgentLifecycle()
+    agent = lifecycle.resume_agent(agent_id, reason=reason)
+    if not agent:
+        typer.echo(f"Agent not found: {agent_id}")
+        raise typer.Exit(code=1)
+    typer.echo(f"Resumed {agent_id}")
+
+
+@agent_app.command("terminate")
+def agent_terminate(
+    agent_id: str = typer.Argument(..., help="Agent ID"),
+    reason: Optional[str] = typer.Option(None, "--reason", help="Termination reason"),
+) -> None:
+    """Terminate an agent."""
+    _load_core_config(reload=True)
+    lifecycle = AgentLifecycle()
+    agent = lifecycle.terminate_agent(agent_id, reason=reason)
+    if not agent:
+        typer.echo(f"Agent not found: {agent_id}")
+        raise typer.Exit(code=1)
+    typer.echo(f"Terminated {agent_id}")
+
+
+@agent_app.command("switch-model")
+def agent_switch_model(
+    agent_id: str = typer.Argument(..., help="Agent ID"),
+    model: str = typer.Argument(..., help="New model name"),
+    reason: Optional[str] = typer.Option(None, "--reason", help="Switch reason"),
+) -> None:
+    """Switch an agent's model."""
+    _load_core_config(reload=True)
+    lifecycle = AgentLifecycle()
+    agent = lifecycle.switch_model(agent_id, model, reason=reason)
+    if not agent:
+        typer.echo(f"Agent not found: {agent_id}")
+        raise typer.Exit(code=1)
+    typer.echo(f"Switched {agent_id} to {model}")
+
+
+@agent_app.command("heartbeat")
+def agent_heartbeat(
+    agent_id: str = typer.Argument(..., help="Agent ID"),
+    tokens_used: Optional[int] = typer.Option(None, "--tokens-used", help="Tokens used"),
+    input_tokens: Optional[int] = typer.Option(None, "--input-tokens", help="Input tokens"),
+    output_tokens: Optional[int] = typer.Option(None, "--output-tokens", help="Output tokens"),
+    elapsed_seconds: Optional[int] = typer.Option(None, "--elapsed-seconds", help="Elapsed seconds"),
+    cost_usd: Optional[float] = typer.Option(None, "--cost-usd", help="Cost in USD"),
+    note: Optional[str] = typer.Option(None, "--note", help="Heartbeat note"),
+) -> None:
+    """Record a heartbeat and enforce budgets."""
+    _load_core_config(reload=True)
+    metrics: Dict[str, Any] = {}
+    if tokens_used is not None:
+        metrics["tokens_used"] = tokens_used
+    if input_tokens is not None:
+        metrics["input_tokens"] = input_tokens
+    if output_tokens is not None:
+        metrics["output_tokens"] = output_tokens
+    if elapsed_seconds is not None:
+        metrics["elapsed_seconds"] = elapsed_seconds
+    if cost_usd is not None:
+        metrics["cost_usd"] = cost_usd
+    monitor = AgentMonitor()
+    result = monitor.record_heartbeat(agent_id, metrics=metrics or None, note=note)
+    if not result.get("success"):
+        typer.echo(f"Agent not found: {agent_id}")
+        raise typer.Exit(code=1)
+    if result.get("terminated"):
+        typer.echo(f"Agent {agent_id} terminated (budget exceeded)")
+    else:
+        typer.echo(f"Heartbeat recorded for {agent_id}")
+
+
+@tool_app.command("check")
+def tool_check(
+    tool: str = typer.Argument(..., help="Tool name"),
+    operation: Optional[str] = typer.Option(None, "--operation", help="Tool operation"),
+    path: Optional[str] = typer.Option(None, "--path", help="Target path"),
+    requires_network: bool = typer.Option(False, "--network", help="Requires network"),
+    requires_bash: bool = typer.Option(False, "--bash", help="Requires bash"),
+    modifies_tests: bool = typer.Option(False, "--modifies-tests", help="Modifies tests"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Permission profile"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Check whether a tool call is permitted."""
+    _load_core_config(reload=True)
+    manager = PermissionManager()
+    decision = manager.validate(
+        tool=tool,
+        operation=operation,
+        path=path,
+        requires_network=requires_network,
+        requires_bash=requires_bash,
+        modifies_tests=modifies_tests,
+        profile_name=profile,
+    )
+    payload = {
+        "tool": tool,
+        "operation": operation,
+        "path": path,
+        "allowed": decision.allowed,
+        "reason": decision.reason,
+        "violations": decision.violations,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    if decision.allowed:
+        typer.echo("Allowed")
+    else:
+        typer.echo(f"Denied: {decision.reason or 'permission_violation'}")
+
+
+@tool_app.command("simulate")
+def tool_simulate(
+    tool: str = typer.Argument(..., help="Tool name"),
+    result_value: str = typer.Option("ok", "--result", help="Result to return"),
+    operation: Optional[str] = typer.Option(None, "--operation", help="Tool operation"),
+    path: Optional[str] = typer.Option(None, "--path", help="Target path"),
+    requires_network: bool = typer.Option(False, "--network", help="Requires network"),
+    requires_bash: bool = typer.Option(False, "--bash", help="Requires bash"),
+    modifies_tests: bool = typer.Option(False, "--modifies-tests", help="Modifies tests"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Permission profile"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Simulate a tool call through ToolProxy."""
+    _load_core_config(reload=True)
+    proxy = ToolProxy(agent_id="cli", profile_name=profile)
+
+    def _noop(result: str) -> str:
+        return result
+
+    outcome = proxy.execute(
+        tool,
+        _noop,
+        parameters={"result": result_value},
+        operation=operation,
+        file_path=path,
+        requires_network=requires_network,
+        requires_bash=requires_bash,
+        modifies_tests=modifies_tests,
+        profile_name=profile,
+    )
+    payload = {
+        "success": outcome.success,
+        "result": outcome.result,
+        "error": outcome.error,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    if outcome.success:
+        typer.echo(f"Result: {outcome.result}")
+    else:
+        typer.echo(f"Error: {outcome.error}")
+
+
+@tool_app.command("read")
+def tool_read(
+    path: str = typer.Argument(..., help="File path"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Permission profile"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Read a file through ToolProxy."""
+    _load_core_config(reload=True)
+    proxy = FileToolProxy(agent_id="cli", profile_name=profile)
+    outcome = proxy.read(path)
+    payload = {"success": outcome.success, "content": outcome.result, "error": outcome.error}
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    if outcome.success:
+        typer.echo(outcome.result)
+    else:
+        typer.echo(f"Error: {outcome.error}")
+
+
+@tool_app.command("write")
+def tool_write(
+    path: str = typer.Argument(..., help="File path"),
+    content: Optional[str] = typer.Option(None, "--content", help="Content to write"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Permission profile"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Write a file through ToolProxy."""
+    _load_core_config(reload=True)
+    if content is None:
+        content = typer.get_text_stream("stdin").read()
+    proxy = FileToolProxy(agent_id="cli", profile_name=profile)
+    outcome = proxy.write(path, content)
+    payload = {"success": outcome.success, "result": outcome.result, "error": outcome.error}
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    if outcome.success:
+        typer.echo(f"Wrote {path}")
+    else:
+        typer.echo(f"Error: {outcome.error}")
+
+
+@tool_app.command("edit")
+def tool_edit(
+    path: str = typer.Argument(..., help="File path"),
+    find: str = typer.Option(..., "--find", help="Text to find"),
+    replace: str = typer.Option(..., "--replace", help="Replacement text"),
+    count: int = typer.Option(1, "--count", help="Replacement count (0=all)"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Permission profile"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+) -> None:
+    """Edit a file through ToolProxy."""
+    _load_core_config(reload=True)
+    proxy = FileToolProxy(agent_id="cli", profile_name=profile)
+    outcome = proxy.edit(path, find=find, replace=replace, count=count)
+    payload = {"success": outcome.success, "result": outcome.result, "error": outcome.error}
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    if outcome.success:
+        typer.echo(f"Edited {path}")
+    else:
+        typer.echo(f"Error: {outcome.error}")
+
+
+@quality_app.command("run")
+def quality_run(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+    test_suite: str = typer.Option("quality-gates", "--test-suite", help="Test suite label"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", help="Related task ID"),
+) -> None:
+    """Run quality gates."""
+    _load_core_config(reload=True)
+    runner = QualityGateRunner()
+    start_time = time.monotonic()
+    log_test_run_started(
+        test_suite=test_suite,
+        task_id=task_id,
+        command="subagent quality run",
+    )
+    report = runner.run()
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    results = report.get("results", [])
+    total = len(results)
+    passed_count = sum(1 for r in results if r.get("passed", False))
+    failed_required = [
+        r for r in results if not r.get("passed", False) and r.get("required", True)
+    ]
+    failed_optional = [
+        r for r in results if not r.get("passed", False) and not r.get("required", True)
+    ]
+    if failed_required:
+        status = "failed"
+    elif failed_optional:
+        status = "warning"
+    else:
+        status = "passed"
+    summary_parts = [f"{passed_count}/{total} gates passed"]
+    if failed_required:
+        summary_parts.append(
+            "required failed: " + ", ".join(r.get("name", "unknown") for r in failed_required)
+        )
+    if failed_optional:
+        summary_parts.append(
+            "optional failed: " + ", ".join(r.get("name", "unknown") for r in failed_optional)
+        )
+    summary = "; ".join(summary_parts)
+    log_test_run_completed(
+        test_suite=test_suite,
+        status=status,
+        task_id=task_id,
+        duration_ms=duration_ms,
+        summary=summary,
+    )
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        if not report.get("passed", False):
+            raise typer.Exit(code=1)
+        return
+    for result in report.get("results", []):
+        name = result.get("name")
+        required = result.get("required", True)
+        passed = result.get("passed", False)
+        status = "PASS" if passed else ("WARN" if not required else "FAIL")
+        message = result.get("message") or ""
+        duration_ms = result.get("duration_ms")
+        duration_label = f" ({duration_ms}ms)" if duration_ms is not None else ""
+        line = f"[{status}] {name}{duration_label}"
+        if message:
+            line = f"{line}: {message}"
+        typer.echo(line)
+    if report.get("passed", False):
+        typer.echo("Quality gates passed.")
+        return
+    typer.echo("Quality gates failed.")
+    raise typer.Exit(code=1)
+
+
+@dashboard_app.command("start")
+def dashboard_start(
+    host: str = typer.Option("localhost", "--host", help="Dashboard host"),
+    port: int = typer.Option(8080, "--port", help="Dashboard port"),
+    background: bool = typer.Option(True, "--background/--foreground", help="Run in background"),
+) -> None:
+    """Start the dashboard HTTP server."""
+    if background:
+        cmd = [
+            sys.executable,
+            "-m",
+            "src.observability.dashboard_server",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
+        _start_background(cmd, "dashboard")
+        return
+
+    from src.observability.dashboard_server import start_dashboard_server, stop_dashboard_server
+
+    start_dashboard_server(host=host, port=port)
+    try:
+        while True:
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        stop_dashboard_server()
+
+
+@dashboard_app.command("stop")
+def dashboard_stop() -> None:
+    """Stop the dashboard HTTP server."""
+    _stop_background("dashboard")
+
+
+@monitor_app.command("start")
+def monitor_start(
+    host: str = typer.Option("localhost", "--host", help="WebSocket host"),
+    port: int = typer.Option(8765, "--port", help="WebSocket port"),
+    max_connections: int = typer.Option(100, "--max-connections", help="Max connections"),
+    buffer_size: int = typer.Option(100, "--buffer-size", help="Event buffer size"),
+    metrics_interval: float = typer.Option(1.0, "--metrics-interval", help="Metrics interval seconds"),
+    window_size: int = typer.Option(300, "--window-size", help="Default metrics window"),
+    auto_subscribe: bool = typer.Option(True, "--auto-subscribe/--no-auto-subscribe", help="Subscribe to event bus"),
+    background: bool = typer.Option(True, "--background/--foreground", help="Run in background"),
+) -> None:
+    """Start the realtime WebSocket monitor."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "src.observability.realtime_monitor",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--max-connections",
+        str(max_connections),
+        "--buffer-size",
+        str(buffer_size),
+        "--metrics-interval",
+        str(metrics_interval),
+        "--window-size",
+        str(window_size),
+    ]
+    if not auto_subscribe:
+        cmd.append("--no-auto-subscribe")
+
+    if background:
+        _start_background(cmd, "monitor")
+        return
+
+    subprocess.call(cmd)
+
+
+@monitor_app.command("stop")
+def monitor_stop() -> None:
+    """Stop the realtime WebSocket monitor."""
+    _stop_background("monitor")
 
 
 @app.command("emit-task-start")
@@ -708,16 +1641,20 @@ def _tail_file_lines(path: Path, lines: int = 20) -> Iterable[str]:
 def logs(
     session_id: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID to show"),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow the latest log"),
-    lines: int = typer.Option(20, "--lines", "-n", help="Number of lines to show"),
+    lines: int = typer.Option(20, "--lines", "--count", "-n", help="Number of lines to show"),
+    task_id: Optional[str] = typer.Option(None, "--task-id", "--task", help="Filter log lines by task id"),
+    event_type: Optional[str] = typer.Option(None, "--event-type", "-e", help="Filter by event_type"),
+    since: Optional[str] = typer.Option(None, "--since", help="Filter events at/after ISO timestamp"),
 ) -> None:
     """View or follow activity logs."""
-    logs = list_log_files()
+    _load_core_config(reload=True)
+    log_files = list_log_files()
     target = None
 
     if session_id:
-        target = next((l for l in logs if l["session_id"] == session_id), None)
+        target = next((l for l in log_files if l["session_id"] == session_id), None)
     else:
-        target = logs[0] if logs else None
+        target = log_files[0] if log_files else None
 
     if not target:
         typer.echo("No log files found.")
@@ -725,11 +1662,11 @@ def logs(
 
     log_path: Path = target["file_path"]
 
-    def print_last_lines():
-        for line in _tail_file_lines(log_path, lines=lines):
+    def print_lines(lines_iter: Iterable[str]) -> None:
+        for line in _filter_lines(list(lines_iter), task_id, event_type, since):
             typer.echo(line)
 
-    print_last_lines()
+    print_lines(_tail_file_lines(log_path, lines=lines))
 
     if follow:
         try:
@@ -738,7 +1675,7 @@ def logs(
                 while True:
                     chunk = f.readline()
                     if chunk:
-                        typer.echo(chunk.rstrip("\n"))
+                        print_lines([chunk.rstrip("\n")])
                     else:
                         time.sleep(0.5)
         except KeyboardInterrupt:
@@ -775,156 +1712,6 @@ def config_show(json_output: bool = typer.Option(False, "--json", help="Output J
         typer.echo(f"Backup:       {payload['core']['backup_enabled']}")
         typer.echo(f"Analytics DB: {payload['core']['analytics_enabled']}")
         typer.echo(f"CLI defaults: priority={cli_cfg['task_defaults']['priority']}, watch_interval={cli_cfg['status']['watch_interval']}")
-
-
-@app.command("task-list")
-def task_list(json_output: bool = typer.Option(False, "--json", help="Output JSON")) -> None:
-    """
-    List tasks from .subagent/tasks/tasks.json.
-    """
-    _ensure_subagent_dirs()
-    tasks = _load_tasks()
-    if json_output:
-        typer.echo(json.dumps(tasks, indent=2))
-        return
-    if not tasks:
-        typer.echo("No tasks found.")
-        return
-    for task in tasks:
-        summary = f"{task['id']}: {task['description']} [{task.get('status','pending')}] (p{task.get('priority',3)})"
-        if task.get("deadline"):
-            summary += f" due {task['deadline']}"
-        if task.get("type"):
-            summary += f" type={task['type']}"
-        typer.echo(summary)
-
-
-@app.command("task-update")
-def task_update(
-    task_id: str = typer.Argument(..., help="Task ID to update"),
-    description: Optional[str] = typer.Option(None, "--description", "-d", help="New description"),
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="New status"),
-    priority: Optional[int] = typer.Option(None, "--priority", "-p", help="New priority"),
-    task_type: Optional[str] = typer.Option(None, "--type", "-t", help="New type/category"),
-    deadline: Optional[str] = typer.Option(None, "--deadline", help="New deadline"),
-    criteria: List[str] = typer.Option([], "--acceptance", "-a", help="Replace acceptance criteria (repeatable)"),
-) -> None:
-    """
-    Update an existing task.
-    """
-    _ensure_subagent_dirs()
-    tasks = _load_tasks()
-    updated = False
-    for task in tasks:
-        if task["id"] != task_id:
-            continue
-        if description is not None:
-            task["description"] = description
-        if status is not None:
-            task["status"] = status
-        if priority is not None:
-            task["priority"] = priority
-        if task_type is not None:
-            task["type"] = task_type
-        if deadline is not None:
-            task["deadline"] = deadline
-        if criteria:
-            task["acceptance_criteria"] = criteria
-        updated = True
-        break
-    if not updated:
-        typer.echo(f"Task {task_id} not found.")
-        raise typer.Exit(code=1)
-    _save_tasks(tasks)
-    typer.echo(f"Updated task {task_id}.")
-
-
-@app.command("task-complete")
-def task_complete(task_id: str = typer.Argument(..., help="Task ID to mark complete")) -> None:
-    """
-    Mark a task as completed.
-    """
-    _ensure_subagent_dirs()
-    tasks = _load_tasks()
-    completed = False
-    for task in tasks:
-        if task["id"] != task_id:
-            continue
-        task["status"] = "done"
-        task["completed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        completed = True
-        break
-    if not completed:
-        typer.echo(f"Task {task_id} not found.")
-        raise typer.Exit(code=1)
-    _save_tasks(tasks)
-    typer.echo(f"Marked task {task_id} as done.")
-
-
-@app.command("task-show")
-def task_show(task_id: str) -> None:
-    """
-    Show a single task by ID.
-    """
-    tasks = _load_tasks()
-    match = next((t for t in tasks if t["id"] == task_id), None)
-    if not match:
-        typer.echo(f"Task {task_id} not found.")
-        raise typer.Exit(code=1)
-    typer.echo(json.dumps(match, indent=2))
-
-
-@app.command()
-def logs(
-    follow: bool = typer.Option(False, "--follow", "-f", help="Tail the latest log"),
-    count: int = typer.Option(20, "--count", "-n", help="Lines to show when not following"),
-    task_id: Optional[str] = typer.Option(None, "--task-id", help="Filter log lines by task id"),
-    event_type: Optional[str] = typer.Option(None, "--event-type", "-e", help="Filter by event_type"),
-    since: Optional[str] = typer.Option(None, "--since", help="Filter events at/after ISO timestamp"),
-) -> None:
-    """
-    Show or tail the latest activity log.
-    """
-    cfg = core_config.get_config()
-    logs_dir = cfg.logs_dir
-    log_files = sorted(logs_dir.glob("*.jsonl*"), reverse=True)
-    if not log_files:
-        typer.echo("No logs found.")
-        return
-    latest = log_files[0]
-    typer.echo(f"Reading {latest}")
-    if follow:
-        _tail_file(latest)
-    else:
-        lines = _read_last_lines(latest, count)
-        for line in _filter_lines(lines, task_id, event_type, since):
-            typer.echo(line.rstrip("\n"))
-
-
-def _read_last_lines(path: Path, count: int) -> list[str]:
-    if path.suffix == ".gz":
-        with gzip.open(path, "rt") as f:
-            lines = f.readlines()
-    else:
-        lines = path.read_text().splitlines()
-    return lines[-count:]
-
-
-def _tail_file(path: Path) -> None:
-    typer.echo("Press Ctrl+C to stop.")
-    open_fn = gzip.open if path.suffix == ".gz" else open
-    with open_fn(path, "rt") as f:
-        f.seek(0, 2)
-        try:
-            while True:
-                line = f.readline()
-                if line:
-                    for filtered in _filter_lines([line], None, None, None):
-                        typer.echo(filtered.rstrip("\n"))
-                else:
-                    time.sleep(1)
-        except KeyboardInterrupt:
-            return
 
 
 def _parse_iso(ts: str) -> Optional[datetime]:
