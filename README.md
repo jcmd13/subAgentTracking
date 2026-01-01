@@ -1,19 +1,23 @@
 # SubAgent Tracking System
 
 Single source of truth for requirements and project tracking.
-Last updated: 2025-12-20
+Last updated: 2026-01-01
 
 ## What this is
-A neutral observability and governance layer for AI coding workflows. It tracks
-agent activity, task lifecycle, approvals, tests, and recovery checkpoints with
-minimal disruption to developer flow. Think of it as "git for AI agents" plus
-governance signals.
+A neutral observability, governance, and orchestration layer for AI coding
+workflows. It tracks activity, task lifecycle, approvals, tests, and recovery
+checkpoints, while also providing guardrails like tool permissions, model
+routing, budget controls, and a tool proxy. Think of it as "git for AI agents"
+plus policy-aware execution.
 
 ## Quick summary
 - Core tracking, snapshots, analytics, and session handoffs are implemented.
-- CLI, dashboard server, and WebSocket monitor are implemented.
-- Adapter SDK, providers, and MCP server exist; E2E validation is pending.
-- Approvals and risk scoring exist; alert UX and blocking hooks are pending.
+- CLI, dashboard server, realtime monitor, and MCP server are implemented.
+- Orchestration guardrails are implemented: permissions, tool proxy, model router,
+  budgets, and test protection (policy tuning and UX polish pending).
+- Adapter SDK and Aider adapter are implemented; additional adapters and live
+  provider validation are pending.
+- Approvals store/events exist; alert UX and blocking hooks are pending.
 - Requirements and roadmap live in this document only.
 
 ## Quick start
@@ -99,6 +103,25 @@ User story: US004 hide non-essential data.
 Acceptance criteria: AC007 focus mode persists; AC008 event stream supports severity/task filters.
 Tasks: T005 focus mode toggle, T006 event stream filters.
 
+### Orchestration and Guardrails
+F001 Tool Proxy and Permissions (Done).
+User story: apply policy-aware tool access.
+Acceptance criteria: tool proxy validates tool/path/network access; permissions config
+supports profiles; CLI tool checks report permission results.
+Tasks: T001 tool proxy, T002 permissions config, T003 CLI check/simulate.
+
+F002 Model Routing and Budget Guardrails (Done).
+User story: route tasks to models based on complexity and budget.
+Acceptance criteria: model router scores complexity; budget alerts influence routing;
+routes persisted in analytics.
+Tasks: T004 router core, T005 budget signals, T006 subscriber ingestion.
+
+F003 Agent Runtime Lifecycle (In progress).
+User story: spawn agents safely with lifecycle hooks and monitoring.
+Acceptance criteria: runtime emits lifecycle events; coordinator handles dependencies;
+monitor records lifecycle metrics.
+Tasks: T007 runtime hooks, T008 lifecycle events, T009 monitor integration.
+
 ### Status Ribbon Observability Overlay (optional)
 Goal: a single-line status ribbon for Claude Code, Codex CLI, and generic terminals.
 Modes: Minimal, Balanced, Power. Degrade order: alerts, task, progress, context, spend, files, tools.
@@ -128,6 +151,8 @@ alerts: list of {severity, code, message}
 - Event bus (pub/sub with async handlers).
 - Agent coordinator (scout/plan/build workflow).
 - Context optimizer.
+- Tool proxy, permissions, and test protection.
+- Model router with budget-aware routing.
 - Analytics engine and fleet monitor.
 - Dashboard server (observability layer).
 
@@ -135,7 +160,7 @@ alerts: list of {severity, code, message}
 
 ### Pivot phases (current)
 Phase 0 Quick wins and dogfood: task lifecycle events, session summaries, task strip, test telemetry (Done).
-Phase 1 Task state + metrics: persist task state and show progress metrics (In progress).
+Phase 1 Task state + metrics: persist task state and show progress metrics (Mostly done).
 Phase 2 Adapter SDK MVP: adapter interface, redaction/allowlist, pilot adapter (In progress).
 Phase 3 Approvals + risk scoring UX: approvals queue, blocking hooks, alert UX (In progress).
 Phase 4 UX polish + focus mode: filters, summaries, export (Planned).
@@ -176,6 +201,7 @@ Storage tiers:
 Key components:
 - Core tracking: `src/core/`
 - CLI: `src/subagent_cli/`
+- Orchestration: `src/orchestration/`
 - Observability: `src/observability/`
 - Adapters: `src/adapters/`
 - MCP server: `src/subagent/mcp/`
@@ -359,6 +385,6 @@ Unreleased additions:
 0.1.0 (2025-11-12): core logging, snapshots, analytics, backup integration, and tests.
 
 ## Legacy and compatibility
-- The project pivoted from a full agent control system to a neutral observability/governance layer.
+- The project pivoted from a control system to a neutral observability/governance layer with guardrails.
 - Legacy `.claude/` data roots are supported; `.subagent/` is the default.
-- Previous control system phases are archived; current focus is the pivot roadmap above.
+- Current focus is the pivot roadmap above.

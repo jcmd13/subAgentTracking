@@ -229,10 +229,20 @@ def _summarize_log(
     return metrics
 
 
-def _find_log_for_session(session_id: Optional[str]) -> Optional[Path]:
+def _find_log_for_session(
+    session_id: Optional[str],
+    logs: Optional[List[Dict[str, Any]]] = None,
+    logs_dir: Optional[Path] = None,
+) -> Optional[Path]:
     if not session_id:
         return None
-    for entry in list_log_files():
+    if logs_dir:
+        for suffix in (".jsonl", ".jsonl.gz"):
+            candidate = logs_dir / f"{session_id}{suffix}"
+            if candidate.exists():
+                return candidate
+    log_entries = logs if logs is not None else list_log_files()
+    for entry in log_entries:
         if entry.get("session_id") == session_id:
             return Path(entry.get("file_path"))
     return None
@@ -325,7 +335,7 @@ def generate_metrics_report(
     pricing = _load_pricing(cfg.claude_dir / "config")
 
     scope_lower = scope.lower()
-    logs = list_log_files()
+    logs = list_log_files(cfg=cfg)
     quality_reports = _collect_quality_reports(cfg.claude_dir / "quality")
     quality_metrics = _summarize_quality(quality_reports).to_dict()
 
@@ -334,9 +344,18 @@ def generate_metrics_report(
 
     if scope_lower == "session":
         session_id = session_id or get_current_session_id()
-        if session_id is None and logs:
+        log_path = _find_log_for_session(
+            session_id,
+            logs=logs,
+            logs_dir=cfg.logs_dir,
+        )
+        if not log_path and logs:
             session_id = logs[0].get("session_id")
-        log_path = _find_log_for_session(session_id)
+            log_path = _find_log_for_session(
+                session_id,
+                logs=logs,
+                logs_dir=cfg.logs_dir,
+            )
         if log_path:
             log_paths = [log_path]
             summary = _summarize_log(log_path, session_id=session_id, pricing=pricing)

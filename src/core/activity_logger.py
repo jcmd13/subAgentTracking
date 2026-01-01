@@ -284,7 +284,7 @@ def _get_parent_stack() -> List[str]:
 # ============================================================================
 
 
-def list_log_files() -> List[Dict[str, Any]]:
+def list_log_files(cfg: Optional[Any] = None) -> List[Dict[str, Any]]:
     """
     List all log files in the logs directory.
 
@@ -301,7 +301,7 @@ def list_log_files() -> List[Dict[str, Any]]:
         >>> for f in files:
         ...     print(f"{f['session_id']}: {f['file_size_bytes']} bytes")
     """
-    cfg = config.get_config()
+    cfg = cfg or config.get_config()
     log_files = []
 
     if not cfg.logs_dir.exists():
