@@ -10,6 +10,49 @@ checkpoints, while also providing guardrails like tool permissions, model
 routing, budget controls, and a tool proxy. Think of it as "git for AI agents"
 plus policy-aware execution.
 
+## About (problem + solution + install + troubleshooting)
+### Problem this solves
+AI agent workflows are hard to audit, recover, and govern. Without a common
+tracking layer, you lose history, can’t replay context cheaply, and lack
+guardrails around tools, tests, and approvals. This system creates a single
+observability and governance layer so agent runs are trackable, recoverable,
+and safe to operate.
+
+### What you get
+- End-to-end activity logs, snapshots, and analytics.
+- Session handoffs and recovery checkpoints.
+- Tool/path/network permissions and approval gates.
+- CLI + dashboard + monitor + MCP server to integrate with agent tools.
+
+### Build and install (local)
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+subagent init
+```
+
+### Build and install (Proxmox host)
+Use the one-shot helper for Ubuntu LXC:
+```bash
+export CT_ID=120
+export CT_CORES=4
+export CT_MEMORY=8192
+export CT_SWAP=1024
+export CT_DISK_TARGET_GB=40
+export INSTALL_TAILSCALE=1
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/jcmd13/subAgentTracking/master/scripts/agent-host/proxmox-deploy.sh)"
+```
+Full guide: `docs/agent-hosting.md`.
+
+### Common issues and fixes
+- `Module not found` or missing CLI: activate the venv and reinstall (`pip install -e .`).
+- Google Drive backup errors: re-run `python setup_google_drive.py` and ensure OAuth creds.
+- `SQLite locked`: close DB viewers and retry after a few seconds.
+- Live provider errors: set keys in `/etc/subagent/agent.env` and ensure `SUBAGENT_PROVIDER_LIVE=1`.
+- MCP client can’t connect: confirm the MCP server command and `SUBAGENT_PROJECT_DIR`.
+
 ## Quick summary
 - Core tracking, snapshots, analytics, and session handoffs are implemented.
 - CLI, dashboard server, realtime monitor, and MCP server are implemented.
@@ -19,6 +62,13 @@ plus policy-aware execution.
   provider validation are pending.
 - Approvals store/events exist; alert UX and blocking hooks are pending.
 - Requirements and roadmap live in this document only.
+
+## Operational docs
+- Agent hosting: `docs/agent-hosting.md`
+- Agent ops workflow: `docs/agent-ops.md`
+- Agent guidance: `AGENTS.md`
+- Claude Code notes: `CLAUDE.md`
+- MCP config templates: `docs/mcp/README.md`
 
 ## Quick start
 1) Create a virtual environment and install dependencies:

@@ -1,0 +1,15 @@
+[Unit]
+Description=SubAgent Codex CLI (tmux)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__AGENT_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=/etc/subagent/agent.env
+ExecStart=__REPO_DIR__/scripts/agent-host/tmux-launch.sh codex __REPO_DIR__/scripts/agent-host/runner.sh ${CODEX_CLI_CMD} ${CODEX_CLI_ARGS}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

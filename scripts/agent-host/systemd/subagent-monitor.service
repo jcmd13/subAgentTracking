@@ -1,0 +1,16 @@
+[Unit]
+Description=SubAgent Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__AGENT_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=/etc/subagent/agent.env
+ExecStart=__REPO_DIR__/scripts/agent-host/runner.sh subagent monitor start --host ${SUBAGENT_MONITOR_HOST} --port ${SUBAGENT_MONITOR_PORT}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

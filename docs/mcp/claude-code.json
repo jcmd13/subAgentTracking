@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "subagent": {
+      "command": "/opt/agents/subAgentTracking/scripts/agent-host/runner.sh",
+      "args": ["python", "-m", "subagent.mcp.server"],
+      "env": {
+        "SUBAGENT_PROJECT_DIR": "/opt/agents/subAgentTracking",
+        "SUBAGENT_DATA_DIR": "/opt/agents/subAgentTracking/.subagent"
+      }
+    }
+  }
+}

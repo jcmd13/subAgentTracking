@@ -1,0 +1,16 @@
+[Unit]
+Description=SubAgent Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__AGENT_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=/etc/subagent/agent.env
+ExecStart=__REPO_DIR__/scripts/agent-host/runner.sh subagent dashboard start --host ${SUBAGENT_DASHBOARD_HOST} --port ${SUBAGENT_DASHBOARD_PORT}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

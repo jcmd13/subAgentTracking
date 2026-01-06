@@ -1,0 +1,15 @@
+[Unit]
+Description=SubAgent Claude Code CLI (tmux)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__AGENT_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=/etc/subagent/agent.env
+ExecStart=__REPO_DIR__/scripts/agent-host/tmux-launch.sh claude __REPO_DIR__/scripts/agent-host/runner.sh ${CLAUDE_CODE_CMD} ${CLAUDE_CODE_ARGS}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
