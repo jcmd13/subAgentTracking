@@ -34,15 +34,18 @@ subagent init
 ```
 
 ### Build and install (Proxmox host)
-Use the one-shot helper for Ubuntu LXC:
+Use the one-shot helper (non-interactive defaults, auto-picks a free CT_ID):
 ```bash
-export CT_ID=120
-export CT_CORES=4
-export CT_MEMORY=8192
-export CT_SWAP=1024
-export CT_DISK_TARGET_GB=40
-export INSTALL_TAILSCALE=1
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/jcmd13/subAgentTracking/master/scripts/agent-host/proxmox-deploy.sh)"
+```
+Force interactive Ubuntu helper prompts:
+```bash
+INTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/jcmd13/subAgentTracking/master/scripts/agent-host/proxmox-deploy.sh)"
+```
+Optional overrides for non-interactive runs:
+```bash
+CT_ID=120 CT_CORES=4 CT_MEMORY=8192 CT_SWAP=1024 CT_DISK_TARGET_GB=40 INSTALL_TAILSCALE=1 \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/jcmd13/subAgentTracking/master/scripts/agent-host/proxmox-deploy.sh)"
 ```
 Full guide: `docs/agent-hosting.md`.
 

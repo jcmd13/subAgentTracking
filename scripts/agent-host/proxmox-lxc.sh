@@ -5,6 +5,7 @@ CT_ID="${CT_ID:-}"
 CT_HOSTNAME="${CT_HOSTNAME:-subagent}"
 CT_TEMPLATE_STORAGE="${CT_TEMPLATE_STORAGE:-local}"
 CT_TEMPLATE="${CT_TEMPLATE:-debian-12-standard_12.2-1_amd64.tar.zst}"
+CT_OSTYPE="${CT_OSTYPE:-debian}"
 CT_ROOTFS_STORAGE="${CT_ROOTFS_STORAGE:-local-lvm}"
 CT_ROOTFS_SIZE="${CT_ROOTFS_SIZE:-40G}"
 CT_MEMORY="${CT_MEMORY:-8192}"
@@ -59,7 +60,7 @@ pct create "${CT_ID}" "${CT_TEMPLATE_STORAGE}:vztmpl/${CT_TEMPLATE}" \
   --net0 "${NET0}" \
   --unprivileged 1 \
   --features "keyctl=1,nesting=1" \
-  --ostype debian \
+  --ostype "${CT_OSTYPE}" \
   --onboot 1 \
   --start "${CT_START}"
 

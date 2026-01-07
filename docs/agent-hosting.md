@@ -17,55 +17,54 @@ community helper script and apply
 the recommended resources using the repo wrapper:
 
 ```bash
-export CT_ID=120
-export CT_CORES=4
-export CT_MEMORY=8192
-export CT_SWAP=1024
-# Optional: override disk target (default 40G) or explicit grow value
-export CT_DISK_TARGET_GB=40
-# export CT_DISK_GROW=+20G
-bash scripts/agent-host/proxmox-ubuntu-helper.sh
+INTERACTIVE=1 bash scripts/agent-host/proxmox-ubuntu-helper.sh
 ```
 
-During the helper prompts, set the CT ID to match `CT_ID` and choose an Ubuntu
-LTS base image. The wrapper will enforce CPU/RAM/swap and resize the disk to
-40G by default unless you override `CT_DISK_TARGET_GB` or `CT_DISK_GROW`.
+Optional overrides:
+```bash
+INTERACTIVE=1 CT_ID=120 CT_CORES=4 CT_MEMORY=8192 CT_SWAP=1024 CT_DISK_TARGET_GB=40 \
+  bash scripts/agent-host/proxmox-ubuntu-helper.sh
+```
+
+During the helper prompts, choose a CT ID and an Ubuntu LTS base image. The
+wrapper will enforce CPU/RAM/swap and resize the disk to 40G by default unless
+you override `CT_DISK_TARGET_GB` or `CT_DISK_GROW`.
 
 ## One-shot Proxmox deployment (recommended)
-This runs the Ubuntu helper, bootstraps the container, installs CLIs, and
-enables services.
+This creates the LXC with defaults (auto-picks a free CT_ID starting at 120),
+bootstraps the container, installs CLIs, and enables services.
 
 ```bash
-export CT_ID=120
-export CT_CORES=4
-export CT_MEMORY=8192
-export CT_SWAP=1024
-export CT_DISK_TARGET_GB=40
-export REPO_URL=https://github.com/jcmd13/subAgentTracking.git
-export INSTALL_TAILSCALE=1
 bash scripts/agent-host/proxmox-deploy.sh
+```
+
+Force interactive Ubuntu helper prompts:
+```bash
+INTERACTIVE=1 bash scripts/agent-host/proxmox-deploy.sh
+```
+
+Optional overrides for non-interactive runs:
+```bash
+CT_ID=120 CT_CORES=4 CT_MEMORY=8192 CT_SWAP=1024 CT_DISK_TARGET_GB=40 \
+  REPO_URL=https://github.com/jcmd13/subAgentTracking.git INSTALL_TAILSCALE=1 \
+  bash scripts/agent-host/proxmox-deploy.sh
 ```
 
 If you prefer to avoid cloning on the Proxmox host, you can run it via curl:
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/jcmd13/subAgentTracking/master/scripts/agent-host/proxmox-deploy.sh)"
 ```
-Set the same environment variables above before running the command.
+Use `INTERACTIVE=1` for the Ubuntu helper prompts, or inline env overrides
+above for non-interactive runs.
 
 ## Minimal curl-only flow (no host clone)
 This path uses curl for everything and never clones the repo on the Proxmox host.
 
 ```bash
-export CT_ID=120
-export CT_CORES=4
-export CT_MEMORY=8192
-export CT_SWAP=1024
-export CT_DISK_TARGET_GB=40
-export INSTALL_TAILSCALE=1
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/jcmd13/subAgentTracking/master/scripts/agent-host/proxmox-deploy.sh)"
 ```
 
-After the script completes:
+After the script completes (replace `120` with your CT ID):
 ```bash
 pct exec 120 -- bash -lc "nano /etc/subagent/agent.env"
 pct exec 120 -- bash -lc "systemctl status subagent-dashboard subagent-monitor subagent-codex subagent-claude-code"

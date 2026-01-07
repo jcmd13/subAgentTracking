@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+INTERACTIVE="${INTERACTIVE:-1}"
+CT_ID_DEFAULT="${CT_ID_DEFAULT:-120}"
 CT_ID="${CT_ID:-}"
 CT_CORES="${CT_CORES:-4}"
 CT_MEMORY="${CT_MEMORY:-8192}"
@@ -9,9 +11,25 @@ CT_DISK_GROW="${CT_DISK_GROW:-}"
 CT_DISK_TARGET_GB="${CT_DISK_TARGET_GB:-40}"
 CT_START="${CT_START:-1}"
 
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+  esac
+  return 1
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run on the Proxmox host as root."
   exit 1
+fi
+
+if [ -z "${CT_ID}" ]; then
+  if is_truthy "${INTERACTIVE}" && [ -t 0 ]; then
+    read -r -p "Enter CT_ID (container ID) [${CT_ID_DEFAULT}]: " input_ct_id
+    CT_ID="${input_ct_id:-${CT_ID_DEFAULT}}"
+  else
+    CT_ID="${CT_ID_DEFAULT}"
+  fi
 fi
 
 if [ -z "${CT_ID}" ]; then
