@@ -20,6 +20,9 @@ if ! id -u "${AGENT_USER}" >/dev/null 2>&1; then
 fi
 
 install -d -o "${AGENT_USER}" -g "${AGENT_USER}" "${WORKDIR}"
+if [ -d "${REPO_DIR}" ]; then
+  chown -R "${AGENT_USER}:${AGENT_USER}" "${REPO_DIR}"
+fi
 
 if command -v runuser >/dev/null 2>&1; then
   runuser -u "${AGENT_USER}" -- bash -lc "
