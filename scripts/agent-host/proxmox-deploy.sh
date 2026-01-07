@@ -26,6 +26,7 @@ REPO_DIR="${REPO_DIR:-${WORKDIR}/subAgentTracking}"
 AGENT_USER="${AGENT_USER:-agent}"
 
 RUN_HELPER="${RUN_HELPER:-1}"
+UPDATE_REPO="${UPDATE_REPO:-1}"
 INSTALL_NODE="${INSTALL_NODE:-1}"
 INSTALL_CLIS="${INSTALL_CLIS:-1}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-0}"
@@ -313,6 +314,14 @@ apt-get install -y git curl ca-certificates
 if [ ! -d '${REPO_DIR}' ]; then
   mkdir -p '${WORKDIR}'
   git clone '${REPO_URL}' '${REPO_DIR}'
+elif [ -d '${REPO_DIR}/.git' ] && [ '${UPDATE_REPO}' = '1' ]; then
+  if git -C '${REPO_DIR}' diff --quiet && git -C '${REPO_DIR}' diff --cached --quiet; then
+    if ! git -C '${REPO_DIR}' pull --ff-only; then
+      echo "Repo update failed; continuing with existing checkout."
+    fi
+  else
+    echo "Repo has local changes; skipping update."
+  fi
 fi
 AGENT_USER='${AGENT_USER}' WORKDIR='${WORKDIR}' REPO_URL='${REPO_URL}' REPO_DIR='${REPO_DIR}' \
   bash '${REPO_DIR}/scripts/agent-host/bootstrap.sh'
