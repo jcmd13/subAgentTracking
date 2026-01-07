@@ -61,6 +61,40 @@ is_truthy() {
   return 1
 }
 
+normalize_rootfs_size() {
+  local size="${1:-}"
+  local mb=0
+  local gb=0
+
+  if [ -z "${size}" ]; then
+    echo ""
+    return 0
+  fi
+
+  if echo "${size}" | grep -Eq '^[0-9]+[Gg]$'; then
+    echo "${size%[Gg]}"
+    return 0
+  fi
+
+  if echo "${size}" | grep -Eq '^[0-9]+[Mm]$'; then
+    mb="${size%[Mm]}"
+    gb=$(( (mb + 1023) / 1024 ))
+    if [ "${gb}" -lt 1 ]; then
+      gb=1
+    fi
+    echo "${gb}"
+    return 0
+  fi
+
+  if echo "${size}" | grep -Eq '^[0-9]+$'; then
+    echo "${size}"
+    return 0
+  fi
+
+  echo "CT_ROOTFS_SIZE must be an integer GiB value (example: 40 or 40G)." >&2
+  exit 1
+}
+
 pick_available_ct_id() {
   local base="${CT_ID_DEFAULT}"
   local max="${CT_ID_MAX:-999}"
@@ -152,8 +186,9 @@ prepare_lxc_defaults() {
   fi
 
   if [ -z "${CT_ROOTFS_SIZE}" ]; then
-    CT_ROOTFS_SIZE="${CT_DISK_TARGET_GB}G"
+    CT_ROOTFS_SIZE="${CT_DISK_TARGET_GB}"
   fi
+  CT_ROOTFS_SIZE="$(normalize_rootfs_size "${CT_ROOTFS_SIZE}")"
 
   resolve_template
 
