@@ -315,12 +315,13 @@ if [ ! -d '${REPO_DIR}' ]; then
   mkdir -p '${WORKDIR}'
   git clone '${REPO_URL}' '${REPO_DIR}'
 elif [ -d '${REPO_DIR}/.git' ] && [ '${UPDATE_REPO}' = '1' ]; then
-  if git -C '${REPO_DIR}' diff --quiet && git -C '${REPO_DIR}' diff --cached --quiet; then
-    if ! git -C '${REPO_DIR}' pull --ff-only; then
-      echo "Repo update failed; continuing with existing checkout."
+  if git -C '${REPO_DIR}' -c safe.directory='${REPO_DIR}' diff --quiet && \
+     git -C '${REPO_DIR}' -c safe.directory='${REPO_DIR}' diff --cached --quiet; then
+    if ! git -C '${REPO_DIR}' -c safe.directory='${REPO_DIR}' pull --ff-only; then
+      echo 'Repo update failed; continuing with existing checkout.'
     fi
   else
-    echo "Repo has local changes; skipping update."
+    echo 'Repo has local changes; skipping update.'
   fi
 fi
 AGENT_USER='${AGENT_USER}' WORKDIR='${WORKDIR}' REPO_URL='${REPO_URL}' REPO_DIR='${REPO_DIR}' \
