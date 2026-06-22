@@ -335,6 +335,10 @@ if __name__ == "__main__":
     print("Analytics Query Examples")
     print("=" * 60)
 
+    # Ensure the analytics schema exists, so queries return empty results
+    # instead of "no such table" when this runs before any data is generated.
+    AnalyticsDB().initialize()
+
     example_query_agent_performance()
     example_query_tool_effectiveness()
     example_query_error_patterns()

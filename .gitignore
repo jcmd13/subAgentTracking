@@ -29,6 +29,11 @@
 .claude/quality/*
 .claude/tasks/*
 .claude/hooks/*
+# Generated runtime config (keep tracked model_pricing.yaml / model_tiers.yaml)
+.claude/config.yaml
+.claude/config/permissions.yaml
+# Demo artifacts written by examples
+.subagent/*.md
 
 # Local Session Data (backed up to Google Drive) - .subagent
 .subagent/logs/*

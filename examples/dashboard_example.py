@@ -39,7 +39,7 @@ async def simulate_agent_workflow():
     event_bus = get_event_bus()
 
     # Workflow started
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=WORKFLOW_STARTED,
         timestamp=datetime.utcnow(),
         payload={
@@ -59,7 +59,7 @@ async def simulate_agent_workflow():
 
     for i, agent_data in enumerate(agents):
         # Agent invoked
-        await event_bus.publish(Event(
+        await event_bus.publish_async(Event(
             event_type=AGENT_INVOKED,
             timestamp=datetime.utcnow(),
             payload={
@@ -77,7 +77,7 @@ async def simulate_agent_workflow():
         # Simulate work (tool usage)
         await asyncio.sleep(0.5)
 
-        await event_bus.publish(Event(
+        await event_bus.publish_async(Event(
             event_type=TOOL_USED,
             timestamp=datetime.utcnow(),
             payload={
@@ -92,7 +92,7 @@ async def simulate_agent_workflow():
         # Agent completed
         await asyncio.sleep(0.5)
 
-        await event_bus.publish(Event(
+        await event_bus.publish_async(Event(
             event_type=AGENT_COMPLETED,
             timestamp=datetime.utcnow(),
             payload={
@@ -109,7 +109,7 @@ async def simulate_agent_workflow():
         ))
 
     # Workflow completed
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=WORKFLOW_COMPLETED,
         timestamp=datetime.utcnow(),
         payload={

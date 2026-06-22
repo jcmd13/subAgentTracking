@@ -64,7 +64,7 @@ def example_agent_invocations():
         agent="test-engineer",
         invoked_by="orchestrator",
         reason="Run integration tests",
-        agent_status="in_progress",
+        status="started",
     )
     print("✅ Logged: test-engineer status tracking")
 
@@ -82,25 +82,27 @@ def example_tool_usage():
     log_tool_usage(
         agent="refactor-agent",
         tool="Read",
-        tool_type="file_operation",
-        file_path="src/auth.py",
-        status="success",
+        operation="file_operation",
+        parameters={"file_path": "src/auth.py"},
+        success=True,
         duration_ms=45,
     )
     print("✅ Logged: Read tool usage")
 
-    # Tool usage with context manager (automatic duration tracking)
-    print("\n[2] Tool usage with context manager:")
-    with log_tool_usage(
+    # Tool usage with manual timing. log_tool_usage() is a direct call that
+    # returns an event id (not a context manager) in the current API.
+    print("\n[2] Tool usage with timing:")
+    _start = time.time()
+    time.sleep(0.1)  # simulate some work
+    print("  - Editing file...")
+    log_tool_usage(
         agent="refactor-agent",
         tool="Edit",
-        tool_type="file_operation",
-        file_path="src/auth.py",
-    ) as tool_event:
-        # Simulate some work
-        time.sleep(0.1)
-        print("  - Editing file...")
-    print("✅ Logged: Edit tool usage (duration automatically tracked)")
+        operation="file_operation",
+        parameters={"file_path": "src/auth.py"},
+        duration_ms=int((time.time() - _start) * 1000),
+    )
+    print("✅ Logged: Edit tool usage")
 
     # Multiple tools in sequence
     print("\n[3] Multiple tool calls:")
@@ -109,8 +111,8 @@ def example_tool_usage():
         log_tool_usage(
             agent="orchestrator",
             tool=tool_name,
-            tool_type="execution",
-            status="success",
+            operation="execution",
+            success=True,
         )
     print(f"✅ Logged: {len(tools_used)} tool calls")
 
@@ -129,29 +131,26 @@ def example_file_operations():
         agent="refactor-agent",
         operation="read",
         file_path="src/auth.py",
-        status="success",
-        lines_affected=245,
+        lines_changed=245,
     )
     print("✅ Logged: Read operation on src/auth.py")
 
-    # Write operation
-    print("\n[2] Write operation:")
+    # Create operation (valid operations: create, modify, delete, rename, read)
+    print("\n[2] Create operation:")
     log_file_operation(
         agent="refactor-agent",
-        operation="write",
+        operation="create",
         file_path="src/auth_new.py",
-        status="success",
-        lines_affected=310,
-        git_aware=True,
+        lines_changed=310,
     )
     print("✅ Logged: Write operation on src/auth_new.py")
 
     # Multiple file operations
     print("\n[3] Multiple file operations:")
     files = [
-        ("src/models/user.py", "edit"),
-        ("src/models/session.py", "edit"),
-        ("tests/test_auth.py", "write"),
+        ("src/models/user.py", "modify"),
+        ("src/models/session.py", "modify"),
+        ("tests/test_auth.py", "create"),
     ]
     for file_path, operation in files:
         log_file_operation(
@@ -371,6 +370,7 @@ def example_combined_workflow():
         question="Architecture approach?",
         options=["async_jwt", "sync_session", "hybrid"],
         selected="async_jwt",
+        rationale="async_jwt is stateless and scales horizontally",
     )
 
     # Step 3: File operations
@@ -381,10 +381,15 @@ def example_combined_workflow():
 
     # Step 4: Tool usage
     print("[Step 4] Editing file...")
-    with log_tool_usage(
-        agent="refactor-agent", tool="Edit", file_path="src/auth.py"
-    ):
-        time.sleep(0.05)
+    _t0 = time.time()
+    time.sleep(0.05)
+    log_tool_usage(
+        agent="refactor-agent",
+        tool="Edit",
+        operation="edit",
+        parameters={"file_path": "src/auth.py"},
+        duration_ms=int((time.time() - _t0) * 1000),
+    )
 
     # Step 5: Context snapshot
     print("[Step 5] Taking progress snapshot...")
