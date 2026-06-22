@@ -739,10 +739,10 @@ conn = sqlite3.connect('.claude/analytics/agent_metrics.db')
 
 ```python
 # Connection string format:
-mongodb+srv://subagent_admin:<password>@subagenttracking.xxxxx.mongodb.net/
+mongodb+srv://<username>:<password>@<cluster>.mongodb.net/
 
 # Save to .env file (git-ignored)
-MONGODB_URI=mongodb+srv://subagent_admin:PASSWORD@subagenttracking.xxxxx.mongodb.net/
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/
 ```
 
 #### Step 4: Migrate from SQLite
