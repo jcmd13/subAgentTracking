@@ -22,6 +22,14 @@
 .claude/analytics/
 .claude/analytics/*
 
+# Runtime state (legacy .claude data root)
+.claude/approvals/*
+.claude/observability/*
+.claude/requirements/*
+.claude/quality/*
+.claude/tasks/*
+.claude/hooks/*
+
 # Local Session Data (backed up to Google Drive) - .subagent
 .subagent/logs/*
 .subagent/state/*

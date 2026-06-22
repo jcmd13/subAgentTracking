@@ -316,9 +316,14 @@ class RealtimeMonitor(EventHandler):
     async def _handle_client(
         self,
         websocket: WebSocketConnection,
-        path: str
+        path: Optional[str] = None,
     ) -> None:
-        """Handle WebSocket client connection."""
+        """Handle WebSocket client connection.
+
+        ``path`` is optional for compatibility with websockets >= 14, which
+        invokes the connection handler with only the connection argument
+        (older versions passed ``path`` positionally).
+        """
         client_id = str(uuid4())
 
         # Check connection limit
@@ -498,7 +503,9 @@ class RealtimeMonitor(EventHandler):
                 "event_type": event.event_type,
                 "timestamp": event.timestamp.isoformat(),
                 "payload": event.payload,
-                "metadata": event.metadata
+                "trace_id": event.trace_id,
+                "session_id": event.session_id,
+                "metadata": getattr(event, "metadata", {}),
             }
 
             await self._send_message(client.websocket, event_dict)
@@ -564,6 +571,10 @@ class RealtimeMonitor(EventHandler):
 
     def _snapshot_to_dict(self, snapshot) -> Dict[str, Any]:
         """Convert MetricsSnapshot to JSON-serializable dict."""
+        # Coerce defaultdict -> plain dict before asdict(); asdict() cannot
+        # reconstruct a defaultdict (it lacks a 1-arg constructor), which would
+        # otherwise raise and silently suppress all metrics broadcasts.
+        snapshot.events_by_type = dict(snapshot.events_by_type or {})
         data = asdict(snapshot)
         data["events_by_type"] = dict(snapshot.events_by_type or {})
         return data
