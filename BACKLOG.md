@@ -23,7 +23,16 @@ The observability dashboard was broken against current dependencies; all three a
 2. `_send_event_to_client` referenced `event.metadata`, which the current `Event` dataclass doesn't have → events never broadcast. Now uses `getattr(..., {})` and also forwards `trace_id`/`session_id`.
 3. `_snapshot_to_dict` called `asdict()` on a snapshot whose `events_by_type` is a `defaultdict` → `asdict` raised and all metrics broadcasts were silently swallowed. Now coerces to a plain dict first.
 
+### Fixed bundled examples (2026-06-22, follow-up session)
+All six `examples/*.py` were drifted/broken against the current API; all now run clean and are guarded by `tests/test_examples_smoke.py` (in the CI gate):
+- `dashboard_example.py`, `full_observability_example.py`: `await event_bus.publish(...)` → `publish_async` (publish is sync now). `full_observability_example.py` also now creates `.subagent/` before writing its report (was `FileNotFoundError`).
+- `custom_events.py`: `with log_tool_usage(...)` → direct call (no longer a context manager); invalid `FileOperationType` values (`write`/`edit` → `create`/`modify`); added required `rationale` to `log_decision`; `status="in_progress"` → valid `AgentStatus` (`started`); corrected `tool_type=`/`status=`/`lines_affected=` kwargs.
+- `analytics_queries.py`: initialize the analytics schema first so a fresh DB returns empty results instead of `no such table`.
+- `basic_usage.py`, `mcp_smoke_test.py`: already current.
+
+### CI stabilization (merged, PR #2)
+- [x] Separated hardware-sensitive benchmarks from the CI correctness gate via a `performance` marker (`tests/conftest.py`); gate runs `-m "not performance"`, benchmarks run non-blocking.
+
 ### Still open
-- [ ] **Confirm license choice** — `LICENSE` is **MIT** (copyright "John Davis", 2026). Change to Apache-2.0 / other if preferred.
-- [ ] **Fix bundled examples** — `examples/dashboard_example.py` (and likely siblings) use the stale event-bus API (`await event_bus.publish(...)`); `publish` is now sync (`publish_async` is the awaitable). The example crashes as written. Update examples to the current API, or add a regression test that imports/runs them.
-- [ ] **(Optional) Pin `websockets`** — consider `websockets>=12,<16` or test against the installed major to avoid future handler-signature breaks.
+- [ ] **Confirm license choice** — `LICENSE` is **MIT** (copyright "John Davis", 2026). Change to Apache-2.0 / other if preferred. (Decision only; no code action.)
+- [ ] **(Optional) Pin `websockets`** — not strictly needed now: `realtime_monitor._handle_client` was made signature-robust, so 14/15.x work. A defensive upper bound (`websockets<16`) could still guard against a future major; left unpinned to avoid install conflicts.
