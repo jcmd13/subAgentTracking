@@ -16,6 +16,7 @@ Usage:
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 
 from src.core.event_bus import Event, get_event_bus
@@ -50,7 +51,7 @@ async def simulate_realistic_workflow():
     workflow_id = "wf-demo-full-001"
 
     # Workflow started
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=WORKFLOW_STARTED,
         timestamp=datetime.utcnow(),
         payload={"workflow_id": workflow_id, "task_count": 5},
@@ -59,7 +60,7 @@ async def simulate_realistic_workflow():
     ))
 
     # Scenario 1: Fast successful agent
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_INVOKED,
         timestamp=datetime.utcnow(),
         payload={
@@ -73,7 +74,7 @@ async def simulate_realistic_workflow():
 
     await asyncio.sleep(0.2)
 
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_COMPLETED,
         timestamp=datetime.utcnow(),
         payload={
@@ -87,7 +88,7 @@ async def simulate_realistic_workflow():
     ))
 
     # Scenario 2: Slow agent (bottleneck)
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_INVOKED,
         timestamp=datetime.utcnow(),
         payload={
@@ -101,7 +102,7 @@ async def simulate_realistic_workflow():
 
     await asyncio.sleep(1.0)  # Simulate slow operation
 
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_COMPLETED,
         timestamp=datetime.utcnow(),
         payload={
@@ -115,7 +116,7 @@ async def simulate_realistic_workflow():
     ))
 
     # Scenario 3: Failing agent (reliability issue)
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_INVOKED,
         timestamp=datetime.utcnow(),
         payload={
@@ -129,7 +130,7 @@ async def simulate_realistic_workflow():
 
     await asyncio.sleep(0.3)
 
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_FAILED,
         timestamp=datetime.utcnow(),
         payload={
@@ -141,7 +142,7 @@ async def simulate_realistic_workflow():
     ))
 
     # Scenario 4: Expensive agent (cost issue)
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_INVOKED,
         timestamp=datetime.utcnow(),
         payload={
@@ -155,7 +156,7 @@ async def simulate_realistic_workflow():
 
     await asyncio.sleep(0.4)
 
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=AGENT_COMPLETED,
         timestamp=datetime.utcnow(),
         payload={
@@ -169,7 +170,7 @@ async def simulate_realistic_workflow():
     ))
 
     # Workflow completed
-    await event_bus.publish(Event(
+    await event_bus.publish_async(Event(
         event_type=WORKFLOW_COMPLETED,
         timestamp=datetime.utcnow(),
         payload={
@@ -334,6 +335,7 @@ async def main():
     # Save markdown report
     markdown = insight_engine.generate_markdown_report(report)
     report_path = ".subagent/demo_insights_report.md"
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
 
     with open(report_path, 'w') as f:
         f.write(markdown)
